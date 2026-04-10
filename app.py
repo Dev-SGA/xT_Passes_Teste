@@ -21,8 +21,8 @@ st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive)")
 # ==========================
 st.title("Pass Map Dashboard")
 
-FIELD_X, FIELD_Y = 120.0, 80.0       # StatsBomb pitch dimensions
-HALF_LINE_X = FIELD_X / 2             # 60
+FIELD_X, FIELD_Y = 120.0, 80.0
+HALF_LINE_X = FIELD_X / 2
 FINAL_THIRD_LINE_X = 80
 
 BOX_X_MIN = 102
@@ -32,12 +32,12 @@ BOX_Y_MAX = 62
 GOAL_X = 120
 GOAL_Y = 40
 
-# Lanes for Switch Pass (StatsBomb pitch: y goes from 0 to 80)
 LANE_LEFT_MIN = 53.33
 LANE_RIGHT_MAX = 26.67
 
-# xT grid dimensions
 NX, NY = 16, 12
+
+LATERAL_MIN_DIST = 12.0  # metres
 
 # Colours
 COLOR_SUCCESS = "#B0B0B0"
@@ -45,6 +45,8 @@ COLOR_FAIL = "#D45B5B"
 COLOR_PROGRESSIVE = "#2F80ED"
 COLOR_SWITCH = "#DAA520"
 COLOR_FORWARD = "#27AE60"
+COLOR_BACKWARD = "#E67E22"
+COLOR_LATERAL = "#8E44AD"
 
 # ==========================
 # xT GRID
@@ -204,15 +206,12 @@ matches_data = {
     ],
 }
 
+
 # ==========================
 # Helpers
 # ==========================
 def has_video_value(v) -> bool:
     return pd.notna(v) and str(v).strip() != ""
-
-
-def distance_to_goal(x, y):
-    return np.sqrt((GOAL_X - x) ** 2 + (GOAL_Y - y) ** 2)
 
 
 def get_lane(y):
@@ -236,20 +235,7 @@ def is_switch_pass(x_start, y_start, y_end) -> bool:
     return False
 
 
-def is_progressive_pass_original(x_start, y_start, x_end, y_end) -> bool:
-    """Original progressive rule (25% closer to goal, x_start >= 35)."""
-    if x_start < 35:
-        return False
-    start_dist = distance_to_goal(x_start, y_start)
-    end_dist = distance_to_goal(x_end, y_end)
-    if start_dist == 0:
-        return False
-    reduction_pct = (start_dist - end_dist) / start_dist
-    return reduction_pct >= 0.25
-
-
 def progressive_wyscout(x_start, x_end) -> bool:
-    """Wyscout progressive pass rule."""
     dist_start = FIELD_X - x_start
     dist_end = FIELD_X - x_end
     closer_by = dist_start - dist_end
@@ -268,6 +254,38 @@ def progressive_wyscout(x_start, x_end) -> bool:
     return False
 
 
+def classify_pass_direction(x_start, y_start, x_end, y_end) -> str:
+    """
+    Angle-based classification:
+      - Forward:  angle within ±45° of attack direction (dx > 0 cone)
+      - Backward: angle within ±45° of own-goal direction (dx < 0 cone)
+      - Lateral:  everything else, BUT only if pass distance > 12m
+                  If distance <= 12m, force into forward or backward
+                  based on dx sign (dx >= 0 → forward, dx < 0 → backward)
+    """
+    dx = x_end - x_start
+    dy = y_end - y_start
+    dist = np.sqrt(dx ** 2 + dy ** 2)
+
+    angle_deg = np.degrees(np.arctan2(abs(dy), dx))
+    # angle_deg:  0° = pure forward, 90° = pure lateral, 180° = pure backward
+
+    if angle_deg <= 45.0:
+        return "forward"
+    elif angle_deg >= 135.0:
+        return "backward"
+    else:
+        # Lateral zone — only if distance > 12m
+        if dist > LATERAL_MIN_DIST:
+            return "lateral"
+        else:
+            # Short pass in lateral zone → force forward or backward
+            if dx >= 0:
+                return "forward"
+            else:
+                return "backward"
+
+
 # ==========================
 # Build DataFrames
 # ==========================
@@ -282,36 +300,42 @@ for match_name, events in matches_data.items():
     dfm["is_won"] = dfm["type"].str.contains("WON", case=False)
     dfm["outcome"] = np.where(dfm["is_won"], "successful", "failed")
 
-    # Original progressive (from code 1)
-    dfm["progressive"] = dfm.apply(
-        lambda row: row["is_won"] and is_progressive_pass_original(
-            row["x_start"], row["y_start"], row["x_end"], row["y_end"]
-        ),
-        axis=1,
-    )
-
-    # Switch pass (from code 1)
+    # Switch pass
     dfm["switch"] = dfm.apply(
         lambda row: is_switch_pass(row["x_start"], row["y_start"], row["y_end"]),
         axis=1,
     )
 
-    # Forward pass (from code 2)
-    dfm["is_forward"] = dfm["x_end"] > dfm["x_start"]
+    # Direction classification (angle-based)
+    dfm["direction"] = dfm.apply(
+        lambda row: classify_pass_direction(
+            row["x_start"], row["y_start"], row["x_end"], row["y_end"]
+        ),
+        axis=1,
+    )
+    dfm["is_forward"] = dfm["direction"] == "forward"
+    dfm["is_backward"] = dfm["direction"] == "backward"
+    dfm["is_lateral"] = dfm["direction"] == "lateral"
 
-    # Progressive Wyscout (from code 2)
+    # Progressive Wyscout
     dfm["is_progressive_wyscout"] = dfm.apply(
         lambda row: progressive_wyscout(row["x_start"], row["x_end"]),
         axis=1,
     )
 
-    # xT values (from code 2)
+    # xT values
     dfm["xt_start"] = dfm.apply(lambda r: xt_value(r["x_start"], r["y_start"]), axis=1)
     dfm["xt_end"] = dfm.apply(lambda r: xt_value(r["x_end"], r["y_end"]), axis=1)
     dfm["delta_xt"] = np.where(
         dfm["outcome"].eq("successful"),
         dfm["xt_end"] - dfm["xt_start"],
         0.0,
+    )
+
+    # Pass distance
+    dfm["pass_distance"] = np.sqrt(
+        (dfm["x_end"] - dfm["x_start"]) ** 2
+        + (dfm["y_end"] - dfm["y_start"]) ** 2
     )
 
     dfs_by_match[match_name] = dfm
@@ -322,7 +346,7 @@ full_data.update(dfs_by_match)
 
 
 # ==========================
-# Stats (merged from both codes)
+# Stats
 # ==========================
 def compute_stats(df: pd.DataFrame) -> dict:
     total_passes = len(df)
@@ -330,72 +354,41 @@ def compute_stats(df: pd.DataFrame) -> dict:
     unsuccessful = total_passes - successful
     accuracy = (successful / total_passes * 100.0) if total_passes else 0.0
 
-    # --- From code 1 ---
-
-    # Progressive (original rule, only successful)
-    progressive_total = int(df["progressive"].sum())
-    progressive_unsuccessful = int(
-        (~df["is_won"] & df.apply(
-            lambda row: is_progressive_pass_original(
-                row["x_start"], row["y_start"], row["x_end"], row["y_end"]
-            ), axis=1
-        )).sum()
-    )
-    progressive_attempted = progressive_total + progressive_unsuccessful
-    progressive_accuracy = (
-        progressive_total / progressive_attempted * 100.0
-        if progressive_attempted
-        else 0.0
-    )
-
     key_passes = int(df["video"].apply(has_video_value).sum())
 
-    # To the Final Third
-    to_final_third = (df["x_start"] < FINAL_THIRD_LINE_X) & (df["x_end"] >= FINAL_THIRD_LINE_X)
-    to_final_third_total = int(to_final_third.sum())
-    to_final_third_success = int((to_final_third & df["is_won"]).sum())
-    to_final_third_accuracy = (
-        (to_final_third_success / to_final_third_total * 100.0)
-        if to_final_third_total else 0.0
-    )
+    # --- Direction stats ---
+    forward_total = int(df["is_forward"].sum())
+    forward_success = int((df["is_forward"] & df["is_won"]).sum())
+    pct_forward = (forward_total / total_passes * 100.0) if total_passes else 0.0
 
-    # Into the Box
-    to_box = (
-        (df["x_end"] >= BOX_X_MIN)
-        & (df["y_end"] >= BOX_Y_MIN)
-        & (df["y_end"] <= BOX_Y_MAX)
-    )
-    box_total = int(to_box.sum())
-    box_success = int((to_box & df["is_won"]).sum())
-    box_accuracy = (box_success / box_total * 100.0) if box_total else 0.0
+    backward_total = int(df["is_backward"].sum())
+    backward_success = int((df["is_backward"] & df["is_won"]).sum())
+    pct_backward = (backward_total / total_passes * 100.0) if total_passes else 0.0
 
-    # Switch Pass
+    lateral_total = int(df["is_lateral"].sum())
+    lateral_success = int((df["is_lateral"] & df["is_won"]).sum())
+    pct_lateral = (lateral_total / total_passes * 100.0) if total_passes else 0.0
+
+    # --- Switch Pass ---
     switch_total = int(df["switch"].sum())
     switch_success = int((df["switch"] & df["is_won"]).sum())
     switch_unsuccess = switch_total - switch_success
     switch_accuracy = (switch_success / switch_total * 100.0) if switch_total else 0.0
     switch_pct_of_total = (switch_total / total_passes * 100.0) if total_passes else 0.0
 
-    # --- From code 2 ---
-
-    # Forward passes
-    forward_total = int(df["is_forward"].sum())
-    pct_forward = (forward_total / total_passes * 100.0) if total_passes else 0.0
-
-    # Progressive Wyscout
+    # --- Progressive Wyscout ---
     prog_wyscout_total = int(df["is_progressive_wyscout"].sum())
-    pct_progressive_wyscout = (
-        prog_wyscout_total / total_passes * 100.0
-    ) if total_passes else 0.0
-
     prog_wyscout_success = int(
         (df["is_progressive_wyscout"] & df["is_won"]).sum()
     )
+    pct_progressive_wyscout = (
+        prog_wyscout_total / total_passes * 100.0
+    ) if total_passes else 0.0
     prog_wyscout_accuracy = (
         prog_wyscout_success / prog_wyscout_total * 100.0
     ) if prog_wyscout_total else 0.0
 
-    # xT — only for successful progressive (Wyscout) passes
+    # --- xT ---
     prog_success_mask = df["is_progressive_wyscout"] & (df["outcome"] == "successful")
     xt_prog_sum = float(df.loc[prog_success_mask, "delta_xt"].sum())
     xt_prog_mean = (
@@ -403,11 +396,19 @@ def compute_stats(df: pd.DataFrame) -> dict:
         if prog_success_mask.any() else 0.0
     )
 
-    # xT total (all successful passes)
     xt_total_sum = float(df.loc[df["outcome"] == "successful", "delta_xt"].sum())
     xt_total_mean = (
         float(df.loc[df["outcome"] == "successful", "delta_xt"].mean())
         if (df["outcome"] == "successful").any() else 0.0
+    )
+
+    # --- Positive ΔxT ---
+    positive_xt_mask = (df["outcome"] == "successful") & (df["delta_xt"] > 0)
+    positive_xt_total = int(positive_xt_mask.sum())
+    positive_xt_sum = float(df.loc[positive_xt_mask, "delta_xt"].sum())
+    positive_xt_mean = (
+        float(df.loc[positive_xt_mask, "delta_xt"].mean())
+        if positive_xt_mask.any() else 0.0
     )
 
     return {
@@ -417,27 +418,22 @@ def compute_stats(df: pd.DataFrame) -> dict:
         "unsuccessful_passes": unsuccessful,
         "accuracy_pct": round(accuracy, 2),
         "key_passes": key_passes,
-        # Progressive (original)
-        "progressive_attempted": progressive_attempted,
-        "progressive_successful": progressive_total,
-        "progressive_accuracy_pct": round(progressive_accuracy, 2),
-        # Final Third
-        "to_final_third_total": to_final_third_total,
-        "to_final_third_success": to_final_third_success,
-        "to_final_third_accuracy_pct": round(to_final_third_accuracy, 2),
-        # Box
-        "box_total": box_total,
-        "box_success": box_success,
-        "box_accuracy_pct": round(box_accuracy, 2),
+        # Direction
+        "forward_total": forward_total,
+        "forward_success": forward_success,
+        "pct_forward": round(pct_forward, 2),
+        "backward_total": backward_total,
+        "backward_success": backward_success,
+        "pct_backward": round(pct_backward, 2),
+        "lateral_total": lateral_total,
+        "lateral_success": lateral_success,
+        "pct_lateral": round(pct_lateral, 2),
         # Switch
         "switch_total": switch_total,
         "switch_success": switch_success,
         "switch_unsuccess": switch_unsuccess,
         "switch_accuracy_pct": round(switch_accuracy, 2),
         "switch_pct_of_total": round(switch_pct_of_total, 2),
-        # Forward
-        "forward_total": forward_total,
-        "pct_forward": round(pct_forward, 2),
         # Progressive Wyscout
         "prog_wyscout_total": prog_wyscout_total,
         "prog_wyscout_success": prog_wyscout_success,
@@ -448,6 +444,10 @@ def compute_stats(df: pd.DataFrame) -> dict:
         "xt_prog_mean": round(xt_prog_mean, 4),
         "xt_total_sum": round(xt_total_sum, 4),
         "xt_total_mean": round(xt_total_mean, 4),
+        # Positive ΔxT
+        "positive_xt_total": positive_xt_total,
+        "positive_xt_sum": round(positive_xt_sum, 4),
+        "positive_xt_mean": round(positive_xt_mean, 4),
     }
 
 
@@ -475,13 +475,12 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 
     for _, row in df.iterrows():
         is_lost = not row["is_won"]
-        is_prog = bool(row["progressive"])
         is_sw = bool(row["switch"])
         is_prog_w = bool(row["is_progressive_wyscout"])
         has_vid = has_video_value(row["video"])
+        direction = row["direction"]
 
-        # Colour hierarchy: fail > switch > progressive (original) >
-        #                    progressive Wyscout > success
+        # Colour hierarchy: fail > switch > progressive Wyscout > direction
         if is_lost:
             if is_sw:
                 color = COLOR_SWITCH
@@ -492,12 +491,9 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         elif is_sw:
             color = COLOR_SWITCH
             alpha = 0.85
-        elif is_prog:
-            color = COLOR_PROGRESSIVE
-            alpha = 0.82
         elif is_prog_w:
             color = COLOR_PROGRESSIVE
-            alpha = 0.65
+            alpha = 0.82
         else:
             color = COLOR_SUCCESS
             alpha = 0.25
@@ -530,7 +526,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         Line2D([0], [0], color=COLOR_FAIL, lw=2.5,
                label="Unsuccessful Pass"),
         Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5,
-               label="Progressive Pass"),
+               label="Progressive Pass (Wyscout)"),
         Line2D([0], [0], color=COLOR_SWITCH, lw=2.5,
                label="Switch Pass"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
@@ -580,10 +576,11 @@ pass_filter = st.sidebar.radio(
         "All Passes",
         "Successful Only",
         "Unsuccessful Only",
-        "Progressive Only (Original)",
-        "Progressive Only (Wyscout)",
         "Forward Only",
-        "To Final Third",
+        "Backward Only",
+        "Lateral Only",
+        "Progressive Only (Wyscout)",
+        "Positive ΔxT Only",
         "Switch Only",
     ],
     index=0,
@@ -595,15 +592,16 @@ if pass_filter == "Successful Only":
     df = df[df["is_won"]].reset_index(drop=True)
 elif pass_filter == "Unsuccessful Only":
     df = df[~df["is_won"]].reset_index(drop=True)
-elif pass_filter == "Progressive Only (Original)":
-    df = df[df["progressive"]].reset_index(drop=True)
-elif pass_filter == "Progressive Only (Wyscout)":
-    df = df[df["is_progressive_wyscout"]].reset_index(drop=True)
 elif pass_filter == "Forward Only":
     df = df[df["is_forward"]].reset_index(drop=True)
-elif pass_filter == "To Final Third":
-    mask = (df["x_start"] < FINAL_THIRD_LINE_X) & (df["x_end"] >= FINAL_THIRD_LINE_X)
-    df = df[mask].reset_index(drop=True)
+elif pass_filter == "Backward Only":
+    df = df[df["is_backward"]].reset_index(drop=True)
+elif pass_filter == "Lateral Only":
+    df = df[df["is_lateral"]].reset_index(drop=True)
+elif pass_filter == "Progressive Only (Wyscout)":
+    df = df[df["is_progressive_wyscout"]].reset_index(drop=True)
+elif pass_filter == "Positive ΔxT Only":
+    df = df[(df["outcome"] == "successful") & (df["delta_xt"] > 0)].reset_index(drop=True)
 elif pass_filter == "Switch Only":
     df = df[df["switch"]].reset_index(drop=True)
 
@@ -629,15 +627,16 @@ with col_stats:
 
     st.divider()
 
-    # --- Forward Passes (from code 2) ---
-    st.subheader("Forward Passes")
-    f1, f2 = st.columns(2)
-    f1.metric("Total Forward", stats["forward_total"])
-    f2.metric("% Forward", f'{stats["pct_forward"]:.1f}%')
+    # --- Pass Direction (angle-based) ---
+    st.subheader("Pass Direction")
+    dir1, dir2, dir3 = st.columns(3)
+    dir1.metric("⬆️ Forward", f'{stats["forward_total"]} ({stats["pct_forward"]:.1f}%)')
+    dir2.metric("⬇️ Backward", f'{stats["backward_total"]} ({stats["pct_backward"]:.1f}%)')
+    dir3.metric("↔️ Lateral", f'{stats["lateral_total"]} ({stats["pct_lateral"]:.1f}%)')
 
     st.divider()
 
-    # --- Progressive Wyscout (from code 2) ---
+    # --- Progressive Wyscout ---
     st.subheader("Progressive Passes (Wyscout)")
     pw1, pw2, pw3 = st.columns(3)
     pw1.metric("Total", stats["prog_wyscout_total"])
@@ -650,7 +649,7 @@ with col_stats:
 
     st.divider()
 
-    # --- xT Summary (from code 2) ---
+    # --- xT Summary ---
     st.subheader("Expected Threat (xT)")
     xt1, xt2 = st.columns(2)
     xt1.metric("xT Total (successful)", f'{stats["xt_total_sum"]:.4f}')
@@ -662,34 +661,16 @@ with col_stats:
 
     st.divider()
 
-    # --- Progressive Original (from code 1) ---
-    st.subheader("Progressive Passes (Original)")
-    p1, p2, p3 = st.columns(3)
-    p1.metric("Total", stats["progressive_attempted"])
-    p2.metric("Successful", stats["progressive_successful"])
-    p3.metric("Accuracy", f'{stats["progressive_accuracy_pct"]:.1f}%')
+    # --- Positive ΔxT ---
+    st.subheader("Positive ΔxT Passes")
+    pxt1, pxt2, pxt3 = st.columns(3)
+    pxt1.metric("Count", stats["positive_xt_total"])
+    pxt2.metric("Σ ΔxT", f'{stats["positive_xt_sum"]:.4f}')
+    pxt3.metric("Mean ΔxT", f'{stats["positive_xt_mean"]:.4f}')
 
     st.divider()
 
-    # --- To the Final Third (from code 1) ---
-    st.subheader("To the Final Third")
-    c7, c8, c9 = st.columns(3)
-    c7.metric("Total", stats["to_final_third_total"])
-    c8.metric("Successful", stats["to_final_third_success"])
-    c9.metric("Accuracy", f'{stats["to_final_third_accuracy_pct"]:.1f}%')
-
-    st.divider()
-
-    # --- Into the Box (from code 1) ---
-    st.subheader("Passes Into the Box")
-    d1, d2, d3 = st.columns(3)
-    d1.metric("Total", stats["box_total"])
-    d2.metric("Successful", stats["box_success"])
-    d3.metric("Accuracy", f'{stats["box_accuracy_pct"]:.1f}%')
-
-    st.divider()
-
-    # --- Switch Passes (from code 1) ---
+    # --- Switch Passes ---
     st.subheader("Switch Passes")
     s1, s2 = st.columns(2)
     s1.metric("Total", stats["switch_total"])
@@ -757,30 +738,28 @@ with col_right:
                 f"{selected_pass['y_end']:.2f})"
             )
 
-        # Flags
-        tag1, tag2, tag3, tag4 = st.columns(4)
-        tag1.write(
-            f"**Progressive (Orig.):** "
-            f"{'✅' if selected_pass['progressive'] else '❌'}"
-        )
+        # Direction + flags
+        dir_emoji = {"forward": "⬆️", "backward": "⬇️", "lateral": "↔️"}
+        direction_label = selected_pass["direction"].capitalize()
+        emoji = dir_emoji.get(selected_pass["direction"], "")
+
+        tag1, tag2, tag3 = st.columns(3)
+        tag1.write(f"**Direction:** {emoji} {direction_label}")
         tag2.write(
             f"**Progressive (Wyscout):** "
             f"{'✅' if selected_pass['is_progressive_wyscout'] else '❌'}"
         )
         tag3.write(
-            f"**Forward:** "
-            f"{'✅' if selected_pass['is_forward'] else '❌'}"
-        )
-        tag4.write(
             f"**Switch:** "
             f"{'✅' if selected_pass['switch'] else '❌'}"
         )
 
-        # xT info
-        xt_col1, xt_col2, xt_col3 = st.columns(3)
-        xt_col1.metric("xT Start", f"{selected_pass['xt_start']:.4f}")
-        xt_col2.metric("xT End", f"{selected_pass['xt_end']:.4f}")
-        xt_col3.metric(
+        # Distance + xT info
+        xt_col1, xt_col2, xt_col3, xt_col4 = st.columns(4)
+        xt_col1.metric("Distance", f"{selected_pass['pass_distance']:.1f}m")
+        xt_col2.metric("xT Start", f"{selected_pass['xt_start']:.4f}")
+        xt_col3.metric("xT End", f"{selected_pass['xt_end']:.4f}")
+        xt_col4.metric(
             "ΔxT",
             f"{selected_pass['delta_xt']:.4f}",
             delta=f"{selected_pass['delta_xt']:.4f}"
@@ -801,15 +780,18 @@ with col_right:
     # ==========================
     with st.expander("📊 Full Pass Data Table"):
         display_cols = [
-            "number", "type", "outcome",
+            "number", "type", "outcome", "direction",
             "x_start", "y_start", "x_end", "y_end",
-            "is_forward", "progressive", "is_progressive_wyscout",
+            "pass_distance",
+            "is_forward", "is_backward", "is_lateral",
+            "is_progressive_wyscout",
             "switch", "xt_start", "xt_end", "delta_xt",
         ]
         st.dataframe(
             df[display_cols].style.format({
                 "x_start": "{:.2f}", "y_start": "{:.2f}",
                 "x_end": "{:.2f}", "y_end": "{:.2f}",
+                "pass_distance": "{:.1f}",
                 "xt_start": "{:.4f}", "xt_end": "{:.4f}",
                 "delta_xt": "{:.4f}",
             }),
