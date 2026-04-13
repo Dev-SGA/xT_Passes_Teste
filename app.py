@@ -565,31 +565,35 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 # ==========================
 st.caption("Click the start dot to select the pass event.")
 
-# Main columns: left = filters + field, right = stats
-col_field, col_stats = st.columns([2, 1], gap="large")
+# Main layout: left column (filters), middle column (field), right column (stats)
+col_filters, col_field, col_stats = st.columns([0.9, 2, 1], gap="large")
 
-# LEFT: Filters + Pass map + selection details
-with col_field:
-    # --- Filters (moved from sidebar) ---
+# LEFT: Filters column
+with col_filters:
     st.subheader("Match Selection")
-    selected_match = st.radio("Choose the match", list(full_data.keys()), index=0)
+    selected_match = st.selectbox("Choose the match", list(full_data.keys()), index=0)
 
     st.subheader("Pass Filter")
     pass_filter = st.radio(
         "Filter passes",
         [
+            "All Passes",
             "Successful Only",
             "Unsuccessful Only",
-            "Progressive Only (All)",      # includes both successful and unsuccessful
-            "Positive xT Only (Successful)"  # only successful passes with delta_xt > 0
+            "Progressive Only (All)",         # includes both successful and unsuccessful
+            "Positive xT Only (Successful)"   # only successful passes with delta_xt > 0
         ],
         index=0,
     )
 
-    # Subset dataframe according to selections
+# MIDDLE: Field + selection details
+with col_field:
+    # Subset dataframe according to selections (using values from filters)
     df = full_data[selected_match].copy()
 
-    if pass_filter == "Successful Only":
+    if pass_filter == "All Passes":
+        df = df.reset_index(drop=True)
+    elif pass_filter == "Successful Only":
         df = df[df["is_won"]].reset_index(drop=True)
     elif pass_filter == "Unsuccessful Only":
         df = df[~df["is_won"]].reset_index(drop=True)
@@ -716,7 +720,7 @@ with col_field:
             height=400,
         )
 
-# RIGHT: Statistics (per user request)
+# RIGHT: Statistics
 with col_stats:
     st.subheader("General Statistics")
 
@@ -730,7 +734,7 @@ with col_stats:
     # --- Pass Direction (angle-based) ---
     st.subheader("Pass Direction")
     dir1, dir2, dir3 = st.columns(3)
-    # Per user's request: percentages without decimal places
+    # Percentages without decimal places
     dir1.metric("⬆️ Forward", f'{stats["forward_total"]} ({stats["pct_forward"]:.0f}%)')
     dir2.metric("⬇️ Backward", f'{stats["backward_total"]} ({stats["pct_backward"]:.0f}%)')
     dir3.metric("↔️ Lateral", f'{stats["lateral_total"]} ({stats["pct_lateral"]:.0f}%)')
@@ -747,7 +751,7 @@ with col_stats:
 
     st.divider()
 
-    # --- Expected Threat (per user request: only progressive & positive metrics) ---
+    # --- Expected Threat (only progressive & positive metrics) ---
     st.subheader("Expected Threat (xT)")
 
     xt1, xt2 = st.columns(2)
