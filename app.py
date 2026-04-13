@@ -27,24 +27,24 @@ st.markdown(
     <style>
       /* Metric main value (slightly smaller than Streamlit default) */
       div[data-testid="stMetricValue"] > span {
-        font-size: 20px !important;   /* adjust to taste */
+        font-size: 18px !important;   /* adjust to taste */
         font-weight: 600 !important;
       }
 
       /* Metric label */
       div[data-testid="stMetricLabel"] {
-        font-size: 12px !important;
+        font-size: 11px !important;
         color: #333333;
       }
 
       /* Metric delta / small text */
       div[data-testid="stMetricDelta"] {
-        font-size: 11px !important;
+        font-size: 10px !important;
       }
 
       /* Reduce header sizes a bit to better balance with metrics */
       h2, h3 {
-        font-size: 16px;
+        font-size: 14px;
       }
     </style>
     """,
