@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import matplotlib
 matplotlib.use("Agg")
@@ -799,6 +800,59 @@ with col_field:
     elif pass_filter == "Positive xT Only (Successful)":
         df_base = df_base[(df_base["outcome"] == "successful") & (df_base["delta_xt"] > 0)].reset_index(drop=True)
 
+    DISPLAY_WIDTH = 780
+
+    # Reserve placeholder at the top where Pass Map will appear (keeps visual order)
+    pass_map_placeholder = st.empty()
+
+    # ---- Zone Heatmap (second visually but we process its clicks before rendering the pass map image into the placeholder) ----
+    st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap (clique em um quadrante para filtrar o Pass Map)</h4>', unsafe_allow_html=True)
+    heat_img, hax, hfig = draw_corridor_heatmap(df_base)
+
+    # Only one heatmap (interactive)
+    heat_click = streamlit_image_coordinates(heat_img, width=DISPLAY_WIDTH)
+
+    # If clicked, compute corridor and column and store in session_state
+    if heat_click is not None:
+        real_w, real_h = heat_img.size
+        disp_w = heat_click["width"]
+        disp_h = heat_click["height"]
+
+        pixel_x = heat_click["x"] * (real_w / disp_w)
+        pixel_y = heat_click["y"] * (real_h / disp_h)
+        mpl_pixel_y = real_h - pixel_y
+
+        # convert pixel -> data coords using heatmap axis transform
+        field_x, field_y = hax.transData.inverted().transform((pixel_x, mpl_pixel_y))
+
+        # x bins and corridor ranges must match draw_corridor_heatmap()
+        x_bins = np.linspace(0.0, FIELD_X, 7)
+        ix = np.searchsorted(x_bins, field_x, side="right") - 1
+        ix = max(0, min(5, ix))
+        x0, x1 = x_bins[ix], x_bins[ix + 1]
+
+        if field_y >= LANE_LEFT_MIN:
+            cname = "left"
+            y0, y1 = LANE_LEFT_MIN, FIELD_Y
+        elif field_y < LANE_RIGHT_MAX:
+            cname = "right"
+            y0, y1 = 0.0, LANE_RIGHT_MAX
+        else:
+            cname = "center"
+            y0, y1 = LANE_RIGHT_MAX, LANE_LEFT_MIN
+
+        st.session_state["heat_selection"] = {
+            "ix": int(ix),
+            "corridor": cname,
+            "x0": float(x0),
+            "x1": float(x1),
+            "y0": float(y0),
+            "y1": float(y1),
+        }
+
+    # close heatmap fig (we already have heat_img)
+    plt.close(hfig)
+
     # Apply heatmap selection if exists (selection stored uses x_end/y_end ranges)
     df_to_draw = df_base
     if st.session_state["heat_selection"] is not None:
@@ -810,20 +864,17 @@ with col_field:
             & (df_base["y_end"] < sel["y1"])
         ].reset_index(drop=True)
 
-    stats = compute_stats(df_to_draw)
-
-    # Display width used for both maps to ensure identical rendering width (alignment)
-    DISPLAY_WIDTH = 780
-
-    # ---- Pass Map (kept first as requested) ----
-    st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (clique no start dot)</h4>', unsafe_allow_html=True)
+    # Now draw the Pass Map image and render it inside the reserved placeholder so it's visually above the heatmap
     img_obj, ax, fig = draw_pass_map(df_to_draw, title=f"Pass Map — {selected_match}")
 
-    # interactive clickable image (streamlit_image_coordinates displays the image)
-    click = streamlit_image_coordinates(img_obj, width=DISPLAY_WIDTH)
+    # Render interactive pass map inside the placeholder (so it appears where the placeholder was created earlier)
+    with pass_map_placeholder:
+        st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (clique no start dot)</h4>', unsafe_allow_html=True)
+        click = streamlit_image_coordinates(img_obj, width=DISPLAY_WIDTH)
 
     selected_pass = None
 
+    # Process pass map click (select a pass)
     if click is not None:
         real_w, real_h = img_obj.size
         disp_w = click["width"]
@@ -850,55 +901,6 @@ with col_field:
 
     plt.close(fig)
 
-    # ---- Zone Heatmap (second) ----
-    st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap (clique em um quadrante para filtrar o Pass Map)</h4>', unsafe_allow_html=True)
-    heat_img, hax, hfig = draw_corridor_heatmap(df_base)
-
-    # Use streamlit_image_coordinates so user can click the heatmap -> we map the click to the corridor+column
-    heat_click = streamlit_image_coordinates(heat_img, width=DISPLAY_WIDTH)
-
-    if heat_click is not None:
-        real_w, real_h = heat_img.size
-        disp_w = heat_click["width"]
-        disp_h = heat_click["height"]
-
-        pixel_x = heat_click["x"] * (real_w / disp_w)
-        pixel_y = heat_click["y"] * (real_h / disp_h)
-        mpl_pixel_y = real_h - pixel_y
-
-        # convert pixel -> data coords using heatmap axis transform
-        field_x, field_y = hax.transData.inverted().transform((pixel_x, mpl_pixel_y))
-
-        # x bins and corridor ranges must match draw_corridor_heatmap()
-        x_bins = np.linspace(0.0, FIELD_X, 7)
-        # clamp index into [0,5]
-        ix = np.searchsorted(x_bins, field_x, side="right") - 1
-        ix = max(0, min(5, ix))
-        x0, x1 = x_bins[ix], x_bins[ix + 1]
-
-        if field_y >= LANE_LEFT_MIN:
-            cname = "left"
-            y0, y1 = LANE_LEFT_MIN, FIELD_Y
-        elif field_y < LANE_RIGHT_MAX:
-            cname = "right"
-            y0, y1 = 0.0, LANE_RIGHT_MAX
-        else:
-            cname = "center"
-            y0, y1 = LANE_RIGHT_MAX, LANE_LEFT_MIN
-
-        # store selection in session_state (so reruns keep it)
-        st.session_state["heat_selection"] = {
-            "ix": int(ix),
-            "corridor": cname,
-            "x0": float(x0),
-            "x1": float(x1),
-            "y0": float(y0),
-            "y1": float(y1),
-        }
-
-    # close heatmap figure (we already have heat_img)
-    plt.close(hfig)
-
     # Show info about current heatmap selection and clear button
     if st.session_state["heat_selection"] is not None:
         sel = st.session_state["heat_selection"]
@@ -918,9 +920,6 @@ with col_field:
             st.session_state["heat_selection"] = None
     else:
         st.markdown("<div style='color:#cfcfcf; margin-top:6px;'>Nenhum quadrante selecionado.</div>", unsafe_allow_html=True)
-
-    # display static heatmap for alignment (we already used streamlit_image_coordinates which rendered it; re-display for consistent layout)
-    st.image(heat_img, width=DISPLAY_WIDTH)
 
     # ---- Selected Event (moved below both maps) ----
     st.divider()
@@ -1002,6 +1001,12 @@ with col_field:
         )
 
 # RIGHT: Statistics
+# Recompute stats based on df_to_draw so the right panel reflects the heatmap selection
+try:
+    stats = compute_stats(df_to_draw)
+except Exception:
+    stats = compute_stats(df_base)
+
 with col_stats:
     with st.expander("General Statistics", expanded=False):
         st.markdown('<div class="stats-section-title">Overview</div>', unsafe_allow_html=True)
@@ -1040,15 +1045,15 @@ with col_stats:
         st.markdown('<div class="stats-section-title">Expected Threat (xT)</div>', unsafe_allow_html=True)
         xt1, xt2 = st.columns(2)
         with xt1:
-            small_metric("xT Σ (Progressive)", f"{stats['xt_prog_sum']:.1f}")
+            small_metric("xT Σ (Progressive)", f"{stats['xt_prog_sum']:.4f}")
         with xt2:
-            small_metric("xT Mean (Progressive)", f"{stats['xt_prog_mean']:.1f}")
+            small_metric("xT Mean (Progressive)", f"{stats['xt_prog_mean']:.4f}")
 
         xt3, xt4 = st.columns(2)
         with xt3:
-            small_metric("xT Σ (Positive ΔxT)", f"{stats['positive_xt_sum']:.1f}")
+            small_metric("xT Σ (Positive ΔxT)", f"{stats['positive_xt_sum']:.4f}")
         with xt4:
-            small_metric("xT Mean (Positive ΔxT)", f"{stats['positive_xt_mean']:.1f}")
+            small_metric("xT Mean (Positive ΔxT)", f"{stats['positive_xt_mean']:.4f}")
 
     st.divider()
     st.caption("Notas: 'Progressive' segue a definição Wyscout; ΔxT só é contabilizado para passes bem-sucedidos.")
