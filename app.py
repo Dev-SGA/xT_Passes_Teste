@@ -129,7 +129,7 @@ NX, NY = 16, 12
 LATERAL_MIN_DIST = 12.0
 
 # Colours
-COLOR_SUCCESS = "#B0B0B0"
+COLOR_SUCCESS = "#ffffff"   # successful passes now white
 COLOR_FAIL = "#D45B5B"
 COLOR_PROGRESSIVE = "#2F80ED"
 COLOR_SWITCH = "#DAA520"
@@ -521,19 +521,19 @@ FIG_DPI = 110
 
 
 def draw_pass_map(df: pd.DataFrame, title: str):
+    # pitch with white lines for better contrast
     pitch = Pitch(
         pitch_type="statsbomb",
         pitch_color="#1a1a2e",
-        line_color="#ffffff",  # lines white
-        line_alpha=0.85,
+        line_color="#ffffff",
+        line_alpha=0.95,
     )
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
     fig.set_facecolor("#1a1a2e")
     fig.set_dpi(FIG_DPI)
 
-    ax.axvline(x=FINAL_THIRD_LINE_X, color="#FFD54F", linewidth=1.0, alpha=0.18)
-    ax.axvline(x=HALF_LINE_X, color="#ffffff", linewidth=0.6, alpha=0.10,
-               linestyle="--")
+    ax.axvline(x=FINAL_THIRD_LINE_X, color="#FFD54F", linewidth=1.0, alpha=0.20)
+    ax.axvline(x=HALF_LINE_X, color="#ffffff", linewidth=0.6, alpha=0.12, linestyle="--")
 
     START_DOT_SIZE = 45
 
@@ -543,24 +543,23 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         is_prog_w = bool(row["is_progressive_wyscout"])
         has_vid = has_video_value(row["video"])
 
-        # Colour hierarchy: fail > switch > progressive Wyscout > direction
+        # New contrast rules:
+        # - Successful: white, slightly transparent (to reduce clutter)
+        # - Progressive: more opaque to stand out
+        # - Unsuccessful: more opaque to stand out
         if is_lost:
-            if is_sw:
-                color = COLOR_SWITCH
-                alpha = 0.60
-            else:
-                color = COLOR_FAIL
-                alpha = 0.55
+            color = COLOR_FAIL
+            alpha = 0.90  # less transparent (more visible)
         elif is_sw:
             color = COLOR_SWITCH
-            alpha = 0.85
+            alpha = 0.92
         elif is_prog_w:
             color = COLOR_PROGRESSIVE
-            alpha = 0.82
+            alpha = 0.88  # more opaque
         else:
-            # Successful ordinary passes — make them much more transparent
+            # successful ordinary passes -> white, low alpha to keep map cleaner
             color = COLOR_SUCCESS
-            alpha = 0.12  # much more transparent
+            alpha = 0.20
 
         pitch.arrows(
             row["x_start"], row["y_start"],
@@ -573,29 +572,23 @@ def draw_pass_map(df: pd.DataFrame, title: str):
             pitch.scatter(
                 row["x_start"], row["y_start"],
                 s=95, marker="o", facecolors="none",
-                edgecolors="#FFD54F", linewidths=2.0, ax=ax, zorder=4,
+                edgecolors="#FFD54F", linewidths=2.0, ax=ax, zorder=5,
             )
 
+        # start dot: keep visible edge so white dots still readable on dark bg
         pitch.scatter(
             row["x_start"], row["y_start"],
             s=START_DOT_SIZE, marker="o", color=color,
-            edgecolors="white", linewidths=0.8, ax=ax, zorder=5, alpha=alpha,
+            edgecolors="white", linewidths=0.8, ax=ax, zorder=6, alpha=alpha,
         )
 
     ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
 
+    # Simplified legend: Successful, Unsuccessful, Progressive (labels in white)
     legend_elements = [
-        Line2D([0], [0], color=COLOR_SUCCESS, lw=2.5, alpha=0.12,
-               label="Successful Pass"),
-        Line2D([0], [0], color=COLOR_FAIL, lw=2.5,
-               label="Unsuccessful Pass"),
-        Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5,
-               label="Progressive Pass (Wyscout)"),
-        Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
-               markeredgecolor="white", markersize=6, label="Start point (click)"),
-        Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
-               markeredgecolor="#FFD54F", markeredgewidth=2, markersize=7,
-               label="Has video"),
+        Line2D([0], [0], color="#ffffff", lw=2.5, label="Successful", alpha=0.9),
+        Line2D([0], [0], color=COLOR_FAIL, lw=2.5, label="Unsuccessful", alpha=0.9),
+        Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5, label="Progressive", alpha=0.9),
     ]
 
     legend = ax.legend(
@@ -603,6 +596,10 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         frameon=True, facecolor="#1a1a2e", edgecolor="#444466", shadow=False,
         fontsize="x-small", labelspacing=0.5, borderpad=0.5,
     )
+    # ensure legend text color is white
+    for txt in legend.get_texts():
+        txt.set_color("white")
+
     legend.get_frame().set_alpha(0.92)
 
     arrow = FancyArrowPatch(
@@ -662,8 +659,8 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
     pitch = Pitch(
         pitch_type="statsbomb",
         pitch_color="#1a1a2e",
-        line_color="#ffffff",  # lines white
-        line_alpha=0.85,
+        line_color="#ffffff",
+        line_alpha=0.95,
     )
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
     fig.set_facecolor("#1a1a2e")
@@ -671,8 +668,10 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
 
     # Create a white -> red colormap
     cmap = LinearSegmentedColormap.from_list("white_red", ["#ffffff", "#ffecec", "#ffbfbf", "#ff8080", "#ff3b3b", "#ff0000"])
-
     norm = Normalize(vmin=0, vmax=vmax)
+
+    # threshold for deciding text color: if background is light (low value), use black text
+    text_light_threshold = max(1, vmax * 0.35)
 
     for cname, (y0, y1) in corridors.items():
         arr = counts[cname]
@@ -690,8 +689,13 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
             cx = (x0 + x1) / 2.0
             cy = (y0 + y1) / 2.0
 
-            text_color = "#ffffff" if value >= vmax * 0.35 else "#bfbfbf"
-            fontw = "700" if value >= vmax * 0.5 else "500"
+            # If the cell background is light (value small), use black text for contrast. Otherwise white.
+            if value <= text_light_threshold:
+                text_color = "#000000"
+            else:
+                text_color = "#ffffff"
+
+            fontw = "700" if value >= vmax * 0.5 else "600"
 
             ax.text(
                 cx, cy, str(value),
@@ -714,13 +718,12 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
     ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", linewidth=0.5, alpha=0.15,
                linestyle="--", zorder=3)
 
-    # Colorbar (kept visual but remove numeric scale/ticks per request)
+    # Colorbar: kept visual but remove numeric ticks (no explicit 0..12 labels)
     sm = ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array(all_vals)
     cbar = fig.colorbar(sm, ax=ax, orientation="vertical", fraction=0.028, pad=0.015,
                         shrink=0.75)
     cbar.set_label("Completed passes", fontsize=9, color="#c0c0c0")
-    # remove numeric ticks/labels to "retire a escala de cores que vai de 0 a 12"
     cbar.ax.yaxis.set_ticks([])
     cbar.outline.set_edgecolor("#444466")
 
@@ -829,7 +832,7 @@ with col_field:
     st.markdown("")  # small spacer
     st.subheader("Zone Heatmap")
     heat_img, hax, hfig = draw_corridor_heatmap(df)
-    st.image(heat_img, use_container_width=True)
+    st.image(heat_img, use_column_width=True)
     plt.close(hfig)
 
     # ---- Selected Event (moved below both maps) ----
