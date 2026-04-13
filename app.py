@@ -16,47 +16,53 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 # ==========================
 st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive)")
 
-# Title
-st.title("Pass Map Dashboard")
-
-# --------------------------
-# Small global CSS tweak to make st.metric fonts slightly smaller
-# --------------------------
+# ==========================
+# Small CSS for compact metrics
+# ==========================
+# A small, elegant style for the numeric stats to reduce font size slightly
 st.markdown(
     """
     <style>
-      /* Metric main value (slightly smaller than Streamlit default) */
-      div[data-testid="stMetricValue"] > span {
-        font-size: 20px !important;   /* adjust to taste */
-        font-weight: 600 !important;
-      }
-
-      /* Metric label */
-      div[data-testid="stMetricLabel"] {
-        font-size: 12px !important;
-        color: #333333;
-      }
-
-      /* Metric delta / small text */
-      div[data-testid="stMetricDelta"] {
-        font-size: 11px !important;
-      }
-
-      /* Reduce header sizes a bit to better balance with metrics */
-      h2, h3 {
-        font-size: 16px;
-      }
+    .small-metric { padding: 6px 8px; }
+    .small-metric .label { font-size: 12px; color: #444444; margin-bottom: 3px; }
+    .small-metric .value { font-size: 18px; font-weight: 600; color: #222222; }
+    .small-metric .delta { font-size: 11px; color: #666666; margin-top: 4px; }
+    .stats-section-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333333; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
+def small_metric(label: str, value: str, delta: str | None = None):
+    """
+    Render a compact/controlled metric using simple HTML (for smaller font sizes).
+    """
+    html = f"""
+    <div class="small-metric">
+      <div class="label">{label}</div>
+      <div class="value">{value}</div>
+    """
+    if delta is not None:
+        html += f'<div class="delta">{delta}</div>'
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
 # ==========================
-# Configuration / constants
+# Configuration
 # ==========================
+st.title("Pass Map Dashboard")
+
 FIELD_X, FIELD_Y = 120.0, 80.0
 HALF_LINE_X = FIELD_X / 2
 FINAL_THIRD_LINE_X = 80
+
+BOX_X_MIN = 102
+BOX_Y_MIN = 18
+BOX_Y_MAX = 62
+
+GOAL_X = 120
+GOAL_Y = 40
 
 LANE_LEFT_MIN = 53.33
 LANE_RIGHT_MAX = 26.67
@@ -102,7 +108,6 @@ def xt_value(x, y):
 
 # ==========================
 # DATA
-# (kept inline for the example; in real usage load from file/db)
 # ==========================
 matches_data = {
     "Vs Connecticut": [
@@ -233,6 +238,7 @@ matches_data = {
     ],
 }
 
+
 # ==========================
 # Helpers
 # ==========================
@@ -281,20 +287,31 @@ def progressive_wyscout(x_start, x_end) -> bool:
 
 
 def classify_pass_direction(x_start, y_start, x_end, y_end) -> str:
+    """
+    Angle-based classification:
+      - Forward:  angle within ±45° of attack direction (dx > 0 cone)
+      - Backward: angle within ±45° of own-goal direction (dx < 0 cone)
+      - Lateral:  everything else, BUT only if pass distance > 12m
+                  If distance <= 12m, force into forward or backward
+                  based on dx sign (dx >= 0 → forward, dx < 0 → backward)
+    """
     dx = x_end - x_start
     dy = y_end - y_start
     dist = np.sqrt(dx ** 2 + dy ** 2)
 
     angle_deg = np.degrees(np.arctan2(abs(dy), dx))
+    # angle_deg:  0° = pure forward, 90° = pure lateral, 180° = pure backward
 
     if angle_deg <= 45.0:
         return "forward"
     elif angle_deg >= 135.0:
         return "backward"
     else:
+        # Lateral zone — only if distance > 12m
         if dist > LATERAL_MIN_DIST:
             return "lateral"
         else:
+            # Short pass in lateral zone → force forward or backward
             if dx >= 0:
                 return "forward"
             else:
@@ -315,7 +332,7 @@ for match_name, events in matches_data.items():
     dfm["is_won"] = dfm["type"].str.contains("WON", case=False)
     dfm["outcome"] = np.where(dfm["is_won"], "successful", "failed")
 
-    # Switch pass (kept for coloring/flags but not shown as a stats block)
+    # Switch pass
     dfm["switch"] = dfm.apply(
         lambda row: is_switch_pass(row["x_start"], row["y_start"], row["y_end"]),
         axis=1,
@@ -361,7 +378,7 @@ full_data.update(dfs_by_match)
 
 
 # ==========================
-# Stats computation
+# Stats
 # ==========================
 def compute_stats(df: pd.DataFrame) -> dict:
     total_passes = len(df)
@@ -384,6 +401,13 @@ def compute_stats(df: pd.DataFrame) -> dict:
     lateral_success = int((df["is_lateral"] & df["is_won"]).sum())
     pct_lateral = (lateral_total / total_passes * 100.0) if total_passes else 0.0
 
+    # --- Switch Pass (kept for internal use only; not shown as block) ---
+    switch_total = int(df["switch"].sum())
+    switch_success = int((df["switch"] & df["is_won"]).sum())
+    switch_unsuccess = switch_total - switch_success
+    switch_accuracy = (switch_success / switch_total * 100.0) if switch_total else 0.0
+    switch_pct_of_total = (switch_total / total_passes * 100.0) if total_passes else 0.0
+
     # --- Progressive Wyscout ---
     prog_wyscout_total = int(df["is_progressive_wyscout"].sum())
     prog_wyscout_success = int(
@@ -396,7 +420,7 @@ def compute_stats(df: pd.DataFrame) -> dict:
         prog_wyscout_success / prog_wyscout_total * 100.0
     ) if prog_wyscout_total else 0.0
 
-    # --- xT (progressive & positive) ---
+    # --- xT (progressive & overall successful) ---
     prog_success_mask = df["is_progressive_wyscout"] & (df["outcome"] == "successful")
     xt_prog_sum = float(df.loc[prog_success_mask, "delta_xt"].sum())
     xt_prog_mean = (
@@ -404,6 +428,14 @@ def compute_stats(df: pd.DataFrame) -> dict:
         if prog_success_mask.any() else 0.0
     )
 
+    # Note: overall successful xT kept internally but not shown in the modified UI
+    xt_total_sum = float(df.loc[df["outcome"] == "successful", "delta_xt"].sum())
+    xt_total_mean = (
+        float(df.loc[df["outcome"] == "successful", "delta_xt"].mean())
+        if (df["outcome"] == "successful").any() else 0.0
+    )
+
+    # --- Positive ΔxT (successful only) ---
     positive_xt_mask = (df["outcome"] == "successful") & (df["delta_xt"] > 0)
     positive_xt_total = int(positive_xt_mask.sum())
     positive_xt_sum = float(df.loc[positive_xt_mask, "delta_xt"].sum())
@@ -429,14 +461,23 @@ def compute_stats(df: pd.DataFrame) -> dict:
         "lateral_total": lateral_total,
         "lateral_success": lateral_success,
         "pct_lateral": pct_lateral,
-        # Progressive
+        # Switch (kept but not displayed as a block per request)
+        "switch_total": switch_total,
+        "switch_success": switch_success,
+        "switch_unsuccess": switch_unsuccess,
+        "switch_accuracy_pct": round(switch_accuracy, 2),
+        "switch_pct_of_total": round(switch_pct_of_total, 2),
+        # Progressive Wyscout
         "prog_wyscout_total": prog_wyscout_total,
         "prog_wyscout_success": prog_wyscout_success,
         "pct_progressive_wyscout": round(pct_progressive_wyscout, 2),
         "prog_wyscout_accuracy_pct": round(prog_wyscout_accuracy, 2),
-        # xT (progressive & positive)
+        # xT (only return values needed for the UI)
         "xt_prog_sum": round(xt_prog_sum, 4),
         "xt_prog_mean": round(xt_prog_mean, 4),
+        "xt_total_sum": round(xt_total_sum, 4),
+        "xt_total_mean": round(xt_total_mean, 4),
+        # Positive ΔxT
         "positive_xt_total": positive_xt_total,
         "positive_xt_sum": round(positive_xt_sum, 4),
         "positive_xt_mean": round(positive_xt_mean, 4),
@@ -460,7 +501,8 @@ def draw_pass_map(df: pd.DataFrame, title: str):
     fig.set_dpi(FIG_DPI)
 
     ax.axvline(x=FINAL_THIRD_LINE_X, color="#FFD54F", linewidth=1.2, alpha=0.25)
-    ax.axvline(x=HALF_LINE_X, color="#aaaaaa", linewidth=0.8, alpha=0.15, linestyle="--")
+    ax.axvline(x=HALF_LINE_X, color="#aaaaaa", linewidth=0.8, alpha=0.15,
+               linestyle="--")
 
     START_DOT_SIZE = 45
 
@@ -469,8 +511,9 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         is_sw = bool(row["switch"])
         is_prog_w = bool(row["is_progressive_wyscout"])
         has_vid = has_video_value(row["video"])
+        direction = row["direction"]
 
-        # Colour hierarchy: fail > switch > progressive Wyscout > direction (simplified)
+        # Colour hierarchy: fail > switch > progressive Wyscout > direction
         if is_lost:
             if is_sw:
                 color = COLOR_SWITCH
@@ -511,11 +554,17 @@ def draw_pass_map(df: pd.DataFrame, title: str):
     ax.set_title(title, fontsize=12)
 
     legend_elements = [
-        Line2D([0], [0], color=COLOR_SUCCESS, lw=2.5, alpha=0.25, label="Successful Pass"),
-        Line2D([0], [0], color=COLOR_FAIL, lw=2.5, label="Unsuccessful Pass"),
-        Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5, label="Progressive Pass (Wyscout)"),
-        Line2D([0], [0], marker="o", color="w", markerfacecolor="gray", markeredgecolor="white", markersize=6, label="Start point (click)"),
-        Line2D([0], [0], marker="o", color="w", markerfacecolor="gray", markeredgecolor="#FFD54F", markeredgewidth=2, markersize=7, label="Has video"),
+        Line2D([0], [0], color=COLOR_SUCCESS, lw=2.5, alpha=0.25,
+               label="Successful Pass"),
+        Line2D([0], [0], color=COLOR_FAIL, lw=2.5,
+               label="Unsuccessful Pass"),
+        Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5,
+               label="Progressive Pass (Wyscout)"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
+               markeredgecolor="white", markersize=6, label="Start point (click)"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
+               markeredgecolor="#FFD54F", markeredgewidth=2, markersize=7,
+               label="Has video"),
     ]
 
     legend = ax.legend(
@@ -530,7 +579,8 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#333333",
     )
     fig.patches.append(arrow)
-    fig.text(0.5, 0.02, "Attack Direction", ha="center", va="center", fontsize=9, color="#333333")
+    fig.text(0.5, 0.02, "Attack Direction",
+             ha="center", va="center", fontsize=9, color="#333333")
 
     fig.tight_layout()
     fig.canvas.draw()
@@ -547,7 +597,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 # ==========================
 st.caption("Click the start dot to select the pass event.")
 
-# Main layout: left = filters, middle = field, right = stats
+# Main layout: left column (filters), middle column (field), right column (stats)
 col_filters, col_field, col_stats = st.columns([0.9, 2, 1], gap="large")
 
 # LEFT: Filters column
@@ -570,7 +620,7 @@ with col_filters:
 
 # MIDDLE: Field + selection details
 with col_field:
-    # Subset dataframe according to filter selections
+    # Subset dataframe according to selections (using values from filters)
     df = full_data[selected_match].copy()
 
     if pass_filter == "All Passes":
@@ -626,14 +676,22 @@ with col_field:
     if selected_pass is None:
         st.info("Click the start dot to inspect the pass details.")
     else:
-        st.success(f"Selected pass: #{int(selected_pass['number'])} ({selected_pass['type']})")
+        st.success(
+            f"Selected pass: #{int(selected_pass['number'])} ({selected_pass['type']})"
+        )
 
         # Position info
         det1, det2 = st.columns(2)
         with det1:
-            st.write(f"**Start:** ({selected_pass['x_start']:.2f}, {selected_pass['y_start']:.2f})")
+            st.write(
+                f"**Start:** ({selected_pass['x_start']:.2f}, "
+                f"{selected_pass['y_start']:.2f})"
+            )
         with det2:
-            st.write(f"**End:** ({selected_pass['x_end']:.2f}, {selected_pass['y_end']:.2f})")
+            st.write(
+                f"**End:** ({selected_pass['x_end']:.2f}, "
+                f"{selected_pass['y_end']:.2f})"
+            )
 
         # Direction + flags
         dir_emoji = {"forward": "⬆️", "backward": "⬇️", "lateral": "↔️"}
@@ -642,8 +700,14 @@ with col_field:
 
         tag1, tag2, tag3 = st.columns(3)
         tag1.write(f"**Direction:** {emoji} {direction_label}")
-        tag2.write(f"**Progressive (Wyscout):** {'✅' if selected_pass['is_progressive_wyscout'] else '❌'}")
-        tag3.write(f"**Switch:** {'✅' if selected_pass['switch'] else '❌'}")
+        tag2.write(
+            f"**Progressive (Wyscout):** "
+            f"{'✅' if selected_pass['is_progressive_wyscout'] else '❌'}"
+        )
+        tag3.write(
+            f"**Switch:** "
+            f"{'✅' if selected_pass['switch'] else '❌'}"
+        )
 
         # Distance + xT info
         xt_col1, xt_col2, xt_col3, xt_col4 = st.columns(4)
@@ -653,7 +717,8 @@ with col_field:
         xt_col4.metric(
             "ΔxT",
             f"{selected_pass['delta_xt']:.4f}",
-            delta=f"{selected_pass['delta_xt']:.4f}" if selected_pass["delta_xt"] != 0 else None,
+            delta=f"{selected_pass['delta_xt']:.4f}"
+            if selected_pass["delta_xt"] != 0 else None,
         )
 
         # Video
@@ -687,45 +752,56 @@ with col_field:
             height=400,
         )
 
-# RIGHT: Statistics
+# RIGHT: Statistics (now inside two expanders)
 with col_stats:
-    st.subheader("General Statistics")
+    # General Statistics Expander (General stats + Directions)
+    with st.expander("General Statistics", expanded=False):
+        st.markdown('<div class="stats-section-title">Overview</div>', unsafe_allow_html=True)
+        row1, row2, row3 = st.columns(3)
+        with row1:
+            small_metric("Total Passes", f"{stats['total_passes']}")
+        with row2:
+            small_metric("Successful", f"{stats['successful_passes']}")
+        with row3:
+            small_metric("Accuracy", f"{stats['accuracy_pct']:.1f}%")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Passes", stats["total_passes"])
-    c2.metric("Successful", stats["successful_passes"])
-    c3.metric("Accuracy", f'{stats["accuracy_pct"]:.1f}%')
+        st.markdown("<hr style='margin:6px 0 8px 0;'>", unsafe_allow_html=True)
+        st.markdown('<div class="stats-section-title">Pass Direction</div>', unsafe_allow_html=True)
+        dir1, dir2, dir3 = st.columns(3)
+        with dir1:
+            small_metric("⬆️ Forward", f"{stats['forward_total']} ({stats['pct_forward']:.0f}%)")
+        with dir2:
+            small_metric("⬇️ Backward", f"{stats['backward_total']} ({stats['pct_backward']:.0f}%)")
+        with dir3:
+            small_metric("↔️ Lateral", f"{stats['lateral_total']} ({stats['pct_lateral']:.0f}%)")
 
-    st.divider()
+    # Advanced Statistics Expander (Progressive & xT)
+    with st.expander("Advanced Statistics", expanded=False):
+        st.markdown('<div class="stats-section-title">Progressive Passes (Wyscout)</div>', unsafe_allow_html=True)
+        pw1, pw2, pw3, pw4 = st.columns(4)
+        with pw1:
+            small_metric("Total", f"{stats['prog_wyscout_total']}")
+        with pw2:
+            small_metric("Successful", f"{stats['prog_wyscout_success']}")
+        with pw3:
+            small_metric("Accuracy", f"{stats['prog_wyscout_accuracy_pct']:.1f}%")
+        with pw4:
+            small_metric("% of Total", f"{stats['pct_progressive_wyscout']:.1f}%")
 
-    # Pass Direction (percentages without decimal places)
-    st.subheader("Pass Direction")
-    dir1, dir2, dir3 = st.columns(3)
-    dir1.metric("⬆️ Forward", f'{stats["forward_total"]} ({stats["pct_forward"]:.0f}%)')
-    dir2.metric("⬇️ Backward", f'{stats["backward_total"]} ({stats["pct_backward"]:.0f}%)')
-    dir3.metric("↔️ Lateral", f'{stats["lateral_total"]} ({stats["pct_lateral"]:.0f}%)')
+        st.markdown("<hr style='margin:6px 0 8px 0;'>", unsafe_allow_html=True)
 
-    st.divider()
+        st.markdown('<div class="stats-section-title">Expected Threat (xT)</div>', unsafe_allow_html=True)
+        xt1, xt2 = st.columns(2)
+        with xt1:
+            small_metric("xT Σ (Progressive)", f"{stats['xt_prog_sum']:.4f}")
+        with xt2:
+            small_metric("xT Mean (Progressive)", f"{stats['xt_prog_mean']:.4f}")
 
-    # Progressive passes block
-    st.subheader("Progressive Passes (Wyscout)")
-    pw1, pw2, pw3, pw4 = st.columns(4)
-    pw1.metric("Total", stats["prog_wyscout_total"])
-    pw2.metric("Successful", stats["prog_wyscout_success"])
-    pw3.metric("Accuracy", f'{stats["prog_wyscout_accuracy_pct"]:.1f}%')
-    pw4.metric("% of Total", f'{stats["pct_progressive_wyscout"]:.1f}%')
-
-    st.divider()
-
-    # Expected Threat (only progressive & positive metrics)
-    st.subheader("Expected Threat (xT)")
-    xt1, xt2 = st.columns(2)
-    xt1.metric("xT Σ (Progressive)", f'{stats["xt_prog_sum"]:.4f}')
-    xt2.metric("xT Mean (Progressive)", f'{stats["xt_prog_mean"]:.4f}')
-
-    xt3, xt4 = st.columns(2)
-    xt3.metric("xT Σ (Positive ΔxT)", f'{stats["positive_xt_sum"]:.4f}')
-    xt4.metric("xT Mean (Positive ΔxT)", f'{stats["positive_xt_mean"]:.4f}')
+        xt3, xt4 = st.columns(2)
+        with xt3:
+            small_metric("xT Σ (Positive ΔxT)", f"{stats['positive_xt_sum']:.4f}")
+        with xt4:
+            small_metric("xT Mean (Positive ΔxT)", f"{stats['positive_xt_mean']:.4f}")
 
     st.divider()
     st.caption("Notas: 'Progressive' segue a definição Wyscout; ΔxT só é contabilizado para passes bem-sucedidos.")
