@@ -560,9 +560,9 @@ def draw_pass_map(df: pd.DataFrame, title: str):
             color = COLOR_PROGRESSIVE
             alpha = 0.88  # more opaque
         else:
-            # successful ordinary passes -> white, increased transparency
+            # successful ordinary passes -> white, very transparent
             color = COLOR_SUCCESS
-            alpha = 0.03  # made even more transparent per last request
+            alpha = 0.03  # very transparent
 
         pitch.arrows(
             row["x_start"], row["y_start"],
@@ -793,6 +793,7 @@ with col_field:
     st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (click the start dot)</h4>', unsafe_allow_html=True)
     img_obj, ax, fig = draw_pass_map(df, title=f"Pass Map — {selected_match}")
 
+    # interactive clickable image (streamlit_image_coordinates displays the image)
     click = streamlit_image_coordinates(img_obj, width=DISPLAY_WIDTH)
 
     selected_pass = None
@@ -822,9 +823,6 @@ with col_field:
             selected_pass = candidates.iloc[0]
 
     plt.close(fig)
-
-    # show pass map image at fixed width (same width for heatmap below)
-    st.image(img_obj, width=DISPLAY_WIDTH)
 
     # ---- Zone Heatmap (right below pass map) ----
     st.markdown("")  # small spacer
