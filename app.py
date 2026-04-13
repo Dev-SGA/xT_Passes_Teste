@@ -11,7 +11,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, Rectangle
 from streamlit_image_coordinates import streamlit_image_coordinates
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize, ListedColormap
+from matplotlib.colors import Normalize, ListedColormap, LinearSegmentedColormap
 
 # ==========================
 # Page Configuration
@@ -67,10 +67,6 @@ st.markdown(
     }
 
     /* ===== Filter sidebar background ===== */
-    div[data-testid="stHorizontalBlock"] > div:first-child > div[data-testid="stVerticalBlockBorderWrapper"] {
-      /* fallback — sometimes Streamlit nesting changes */
-    }
-
     .filter-panel {
       background: linear-gradient(168deg, rgba(30, 39, 56, 0.92) 0%, rgba(22, 28, 40, 0.97) 100%);
       border: 1px solid rgba(255, 255, 255, 0.08);
@@ -528,15 +524,15 @@ def draw_pass_map(df: pd.DataFrame, title: str):
     pitch = Pitch(
         pitch_type="statsbomb",
         pitch_color="#1a1a2e",
-        line_color="#e0e0e0",
-        line_alpha=0.4,
+        line_color="#ffffff",  # lines white
+        line_alpha=0.85,
     )
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
     fig.set_facecolor("#1a1a2e")
     fig.set_dpi(FIG_DPI)
 
     ax.axvline(x=FINAL_THIRD_LINE_X, color="#FFD54F", linewidth=1.0, alpha=0.18)
-    ax.axvline(x=HALF_LINE_X, color="#aaaaaa", linewidth=0.6, alpha=0.10,
+    ax.axvline(x=HALF_LINE_X, color="#ffffff", linewidth=0.6, alpha=0.10,
                linestyle="--")
 
     START_DOT_SIZE = 45
@@ -547,6 +543,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         is_prog_w = bool(row["is_progressive_wyscout"])
         has_vid = has_video_value(row["video"])
 
+        # Colour hierarchy: fail > switch > progressive Wyscout > direction
         if is_lost:
             if is_sw:
                 color = COLOR_SWITCH
@@ -561,8 +558,9 @@ def draw_pass_map(df: pd.DataFrame, title: str):
             color = COLOR_PROGRESSIVE
             alpha = 0.82
         else:
+            # Successful ordinary passes — make them much more transparent
             color = COLOR_SUCCESS
-            alpha = 0.35
+            alpha = 0.12  # much more transparent
 
         pitch.arrows(
             row["x_start"], row["y_start"],
@@ -587,7 +585,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
     ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
 
     legend_elements = [
-        Line2D([0], [0], color=COLOR_SUCCESS, lw=2.5, alpha=0.35,
+        Line2D([0], [0], color=COLOR_SUCCESS, lw=2.5, alpha=0.12,
                label="Successful Pass"),
         Line2D([0], [0], color=COLOR_FAIL, lw=2.5,
                label="Unsuccessful Pass"),
@@ -604,7 +602,6 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         handles=legend_elements, loc="upper left", bbox_to_anchor=(0.01, 0.99),
         frameon=True, facecolor="#1a1a2e", edgecolor="#444466", shadow=False,
         fontsize="x-small", labelspacing=0.5, borderpad=0.5,
-        labelcolor="#e0e0e0",
     )
     legend.get_frame().set_alpha(0.92)
 
@@ -627,9 +624,9 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 
 
 # ==========================
-# Draw corridor heatmap (same size & style as pass map)
+# Draw zone heatmap (same size & style as pass map)
 # ==========================
-def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap — Completed Passes"):
+def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Completed Passes"):
     df_success = df[df["is_won"]].copy()
 
     x_bins = np.linspace(0.0, FIELD_X, 7)
@@ -665,17 +662,16 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap — C
     pitch = Pitch(
         pitch_type="statsbomb",
         pitch_color="#1a1a2e",
-        line_color="#e0e0e0",
-        line_alpha=0.25,
+        line_color="#ffffff",  # lines white
+        line_alpha=0.85,
     )
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
     fig.set_facecolor("#1a1a2e")
     fig.set_dpi(FIG_DPI)
 
-    # Custom colormap: dark base → teal → bright cyan
-    colors_list = ["#1a1a2e", "#16334a", "#0e5a6e", "#0a8a8a", "#2dd4bf", "#a7f3d0"]
-    cmap = ListedColormap(colors_list)
-    cmap = plt.get_cmap("YlGnBu")
+    # Create a white -> red colormap
+    cmap = LinearSegmentedColormap.from_list("white_red", ["#ffffff", "#ffecec", "#ffbfbf", "#ff8080", "#ff3b3b", "#ff0000"])
+
     norm = Normalize(vmin=0, vmax=vmax)
 
     for cname, (y0, y1) in corridors.items():
@@ -686,16 +682,15 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap — C
             color = cmap(norm(value))
             rect = Rectangle(
                 (x0, y0), x1 - x0, y1 - y0,
-                facecolor=color, edgecolor=(1.0, 1.0, 1.0, 0.15),
-                linewidth=0.6, alpha=0.88, zorder=2,
+                facecolor=color, edgecolor=(1.0, 1.0, 1.0, 0.12),
+                linewidth=0.6, alpha=0.95, zorder=2,
             )
             ax.add_patch(rect)
 
-            # Soft rounded background behind text for readability
             cx = (x0 + x1) / 2.0
             cy = (y0 + y1) / 2.0
 
-            text_color = "#ffffff" if value >= vmax * 0.35 else "#b0b0b0"
+            text_color = "#ffffff" if value >= vmax * 0.35 else "#bfbfbf"
             fontw = "700" if value >= vmax * 0.5 else "500"
 
             ax.text(
@@ -707,7 +702,6 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap — C
 
     ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
 
-    # Corridor labels on the right side
     label_style = dict(va="center", ha="left", fontsize=9, color="#a0a0b0",
                        fontstyle="italic")
     ax.text(FIELD_X + 1.5, (left_y0 + left_y1) / 2, "Left", **label_style)
@@ -720,17 +714,16 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap — C
     ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", linewidth=0.5, alpha=0.15,
                linestyle="--", zorder=3)
 
-    # Colorbar
+    # Colorbar (kept visual but remove numeric scale/ticks per request)
     sm = ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array(all_vals)
     cbar = fig.colorbar(sm, ax=ax, orientation="vertical", fraction=0.028, pad=0.015,
                         shrink=0.75)
     cbar.set_label("Completed passes", fontsize=9, color="#c0c0c0")
-    cbar.ax.yaxis.set_tick_params(color="#c0c0c0")
+    # remove numeric ticks/labels to "retire a escala de cores que vai de 0 a 12"
+    cbar.ax.yaxis.set_ticks([])
     cbar.outline.set_edgecolor("#444466")
-    plt.setp(cbar.ax.get_yticklabels(), color="#c0c0c0", fontsize=8)
 
-    # Attack direction arrow
     arrow = FancyArrowPatch(
         (0.45, 0.05), (0.55, 0.05), transform=fig.transFigure,
         arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#cccccc",
@@ -832,9 +825,9 @@ with col_field:
 
     plt.close(fig)
 
-    # ---- Corridor Heatmap (right below pass map) ----
+    # ---- Zone Heatmap (right below pass map) ----
     st.markdown("")  # small spacer
-    st.subheader("Corridor Heatmap")
+    st.subheader("Zone Heatmap")
     heat_img, hax, hfig = draw_corridor_heatmap(df)
     st.image(heat_img, use_container_width=True)
     plt.close(hfig)
