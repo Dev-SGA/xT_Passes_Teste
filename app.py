@@ -544,12 +544,12 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         has_vid = has_video_value(row["video"])
 
         # New contrast rules:
-        # - Successful: white, slightly transparent (to reduce clutter)
+        # - Successful: white, very transparent (to reduce clutter)
         # - Progressive: more opaque to stand out
         # - Unsuccessful: more opaque to stand out
         if is_lost:
             color = COLOR_FAIL
-            alpha = 0.90  # less transparent (more visible)
+            alpha = 0.92  # more visible
         elif is_sw:
             color = COLOR_SWITCH
             alpha = 0.92
@@ -557,9 +557,9 @@ def draw_pass_map(df: pd.DataFrame, title: str):
             color = COLOR_PROGRESSIVE
             alpha = 0.88  # more opaque
         else:
-            # successful ordinary passes -> white, low alpha to keep map cleaner
+            # successful ordinary passes -> white, increased transparency
             color = COLOR_SUCCESS
-            alpha = 0.20
+            alpha = 0.06  # made more transparent per request
 
         pitch.arrows(
             row["x_start"], row["y_start"],
@@ -586,7 +586,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 
     # Simplified legend: Successful, Unsuccessful, Progressive (labels in white)
     legend_elements = [
-        Line2D([0], [0], color="#ffffff", lw=2.5, label="Successful", alpha=0.9),
+        Line2D([0], [0], color="#ffffff", lw=2.5, label="Successful", alpha=0.5),
         Line2D([0], [0], color=COLOR_FAIL, lw=2.5, label="Unsuccessful", alpha=0.9),
         Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5, label="Progressive", alpha=0.9),
     ]
@@ -706,26 +706,13 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
 
     ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
 
-    label_style = dict(va="center", ha="left", fontsize=9, color="#a0a0b0",
-                       fontstyle="italic")
-    ax.text(FIELD_X + 1.5, (left_y0 + left_y1) / 2, "Left", **label_style)
-    ax.text(FIELD_X + 1.5, (center_y0 + center_y1) / 2, "Center", **label_style)
-    ax.text(FIELD_X + 1.5, (right_y0 + right_y1) / 2, "Right", **label_style)
-
-    # Dashed corridor separators
+    # Dashed corridor separators (kept for visual structure)
     ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", linewidth=0.5, alpha=0.15,
                linestyle="--", zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", linewidth=0.5, alpha=0.15,
                linestyle="--", zorder=3)
 
-    # Colorbar: kept visual but remove numeric ticks (no explicit 0..12 labels)
-    sm = ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array(all_vals)
-    cbar = fig.colorbar(sm, ax=ax, orientation="vertical", fraction=0.028, pad=0.015,
-                        shrink=0.75)
-    cbar.set_label("Completed passes", fontsize=9, color="#c0c0c0")
-    cbar.ax.yaxis.set_ticks([])
-    cbar.outline.set_edgecolor("#444466")
+    # Remove colorbar and corridor description text per request: leave only the map
 
     arrow = FancyArrowPatch(
         (0.45, 0.05), (0.55, 0.05), transform=fig.transFigure,
