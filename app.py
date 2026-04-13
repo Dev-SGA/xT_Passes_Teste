@@ -16,7 +16,7 @@ from matplotlib.colors import Normalize, ListedColormap, LinearSegmentedColormap
 # ==========================
 # Page Configuration
 # ==========================
-st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive) — v5.1")
+st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive) — v5.2")
 
 # ==========================
 # CSS
@@ -111,7 +111,7 @@ def small_metric(label: str, value: str, delta: str | None = None):
 # ==========================
 # Configuration / constants
 # ==========================
-st.title("Pass Map Dashboard (Interactive) — v5.1")
+st.title("Pass Map Dashboard (Interactive) — v5.2")
 
 FIELD_X, FIELD_Y = 120.0, 80.0
 HALF_LINE_X = FIELD_X / 2
@@ -286,7 +286,7 @@ matches_data = {
 }
 
 # ==========================
-# Helpers, DataFrames, Stats, Draw functions (same as before)
+# Helpers, DataFrames, Stats, Draw functions
 # ==========================
 def has_video_value(v) -> bool:
     return pd.notna(v) and str(v).strip() != ""
@@ -347,42 +347,21 @@ def classify_pass_direction(x_start, y_start, x_end, y_end) -> str:
 # Build DataFrames
 dfs_by_match = {}
 for match_name, events in matches_data.items():
-    dfm = pd.DataFrame(
-        events,
-        columns=["type", "x_start", "y_start", "x_end", "y_end", "video"],
-    )
+    dfm = pd.DataFrame(events, columns=["type", "x_start", "y_start", "x_end", "y_end", "video"])
     dfm["match"] = match_name
     dfm["number"] = np.arange(1, len(dfm) + 1)
     dfm["is_won"] = dfm["type"].str.contains("WON", case=False)
     dfm["outcome"] = np.where(dfm["is_won"], "successful", "failed")
-    dfm["switch"] = dfm.apply(
-        lambda row: is_switch_pass(row["x_start"], row["y_start"], row["y_end"]),
-        axis=1,
-    )
-    dfm["direction"] = dfm.apply(
-        lambda row: classify_pass_direction(
-            row["x_start"], row["y_start"], row["x_end"], row["y_end"]
-        ),
-        axis=1,
-    )
+    dfm["switch"] = dfm.apply(lambda row: is_switch_pass(row["x_start"], row["y_start"], row["y_end"]), axis=1)
+    dfm["direction"] = dfm.apply(lambda row: classify_pass_direction(row["x_start"], row["y_start"], row["x_end"], row["y_end"]), axis=1)
     dfm["is_forward"] = dfm["direction"] == "forward"
     dfm["is_backward"] = dfm["direction"] == "backward"
     dfm["is_lateral"] = dfm["direction"] == "lateral"
-    dfm["is_progressive_wyscout"] = dfm.apply(
-        lambda row: progressive_wyscout(row["x_start"], row["x_end"]),
-        axis=1,
-    )
+    dfm["is_progressive_wyscout"] = dfm.apply(lambda row: progressive_wyscout(row["x_start"], row["x_end"]), axis=1)
     dfm["xt_start"] = dfm.apply(lambda r: xt_value(r["x_start"], r["y_start"]), axis=1)
     dfm["xt_end"] = dfm.apply(lambda r: xt_value(r["x_end"], r["y_end"]), axis=1)
-    dfm["delta_xt"] = np.where(
-        dfm["outcome"].eq("successful"),
-        dfm["xt_end"] - dfm["xt_start"],
-        0.0,
-    )
-    dfm["pass_distance"] = np.sqrt(
-        (dfm["x_end"] - dfm["x_start"]) ** 2
-        + (dfm["y_end"] - dfm["y_start"]) ** 2
-    )
+    dfm["delta_xt"] = np.where(dfm["outcome"].eq("successful"), dfm["xt_end"] - dfm["xt_start"], 0.0)
+    dfm["pass_distance"] = np.sqrt((dfm["x_end"] - dfm["x_start"]) ** 2 + (dfm["y_end"] - dfm["y_start"]) ** 2)
     dfs_by_match[match_name] = dfm
 
 df_all = pd.concat(dfs_by_match.values(), ignore_index=True)
@@ -460,12 +439,7 @@ FIG_W, FIG_H = 7.9, 5.3
 FIG_DPI = 110
 
 def draw_pass_map(df: pd.DataFrame, title: str):
-    pitch = Pitch(
-        pitch_type="statsbomb",
-        pitch_color="#1a1a2e",
-        line_color="#ffffff",
-        line_alpha=0.95,
-    )
+    pitch = Pitch(pitch_type="statsbomb", pitch_color="#1a1a2e", line_color="#ffffff", line_alpha=0.95)
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
     fig.set_facecolor("#1a1a2e")
     fig.set_dpi(FIG_DPI)
@@ -489,38 +463,28 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         else:
             color = COLOR_SUCCESS
             alpha = 0.03
-        pitch.arrows(
-            row["x_start"], row["y_start"],
-            row["x_end"], row["y_end"],
-            color=color, width=1.55, headwidth=2.25, headlength=2.25,
-            ax=ax, zorder=3, alpha=alpha,
-        )
+        pitch.arrows(row["x_start"], row["y_start"], row["x_end"], row["y_end"],
+                     color=color, width=1.55, headwidth=2.25, headlength=2.25,
+                     ax=ax, zorder=3, alpha=alpha)
         if has_vid:
-            pitch.scatter(
-                row["x_start"], row["y_start"],
-                s=95, marker="o", facecolors="none",
-                edgecolors="#FFD54F", linewidths=2.0, ax=ax, zorder=5,
-            )
-        pitch.scatter(
-            row["x_start"], row["y_start"],
-            s=START_DOT_SIZE, marker="o", color=color,
-            edgecolors="white", linewidths=0.8, ax=ax, zorder=6, alpha=alpha,
-        )
+            pitch.scatter(row["x_start"], row["y_start"], s=95, marker="o", facecolors="none",
+                          edgecolors="#FFD54F", linewidths=2.0, ax=ax, zorder=5)
+        pitch.scatter(row["x_start"], row["y_start"], s=START_DOT_SIZE, marker="o", color=color,
+                      edgecolors="white", linewidths=0.8, ax=ax, zorder=6, alpha=alpha)
     ax.set_title(title, fontsize=12, color="#ffffff", pad=8)
     legend_elements = [
         Line2D([0], [0], color="#ffffff", lw=2.5, label="Successful", alpha=0.5),
         Line2D([0], [0], color=COLOR_FAIL, lw=2.5, label="Unsuccessful", alpha=0.9),
         Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5, label="Progressive", alpha=0.9),
     ]
-    legend = ax.legend(
-        handles=legend_elements, loc="upper left", bbox_to_anchor=(0.01, 0.99),
-        frameon=True, facecolor="#1a1a2e", edgecolor="#444466", shadow=False,
-        fontsize="x-small", labelspacing=0.5, borderpad=0.5,
-    )
+    legend = ax.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(0.01, 0.99),
+                       frameon=True, facecolor="#1a1a2e", edgecolor="#444466", shadow=False,
+                       fontsize="x-small", labelspacing=0.5, borderpad=0.5)
     for txt in legend.get_texts():
         txt.set_color("white")
     legend.get_frame().set_alpha(0.92)
-    arrow = FancyArrowPatch((0.45, 0.05), (0.55, 0.05), transform=fig.transFigure, arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#cccccc")
+    arrow = FancyArrowPatch((0.45, 0.05), (0.55, 0.05), transform=fig.transFigure,
+                           arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#cccccc")
     fig.patches.append(arrow)
     fig.text(0.5, 0.02, "Attack Direction", ha="center", va="center", fontsize=9, color="#cccccc")
     fig.tight_layout()
@@ -543,12 +507,8 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
         arr = np.zeros(6, dtype=int)
         for i in range(6):
             x0, x1 = x_bins[i], x_bins[i + 1]
-            mask = (
-                (df_success["x_end"] >= x0)
-                & (df_success["x_end"] < x1)
-                & (df_success["y_end"] >= y0)
-                & (df_success["y_end"] < y1)
-            )
+            mask = ((df_success["x_end"] >= x0) & (df_success["x_end"] < x1)
+                    & (df_success["y_end"] >= y0) & (df_success["y_end"] < y1))
             arr[i] = int(mask.sum())
         counts[cname] = arr
     all_vals = np.concatenate([counts[c] for c in counts])
@@ -566,7 +526,8 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
             x0, x1 = x_bins[i], x_bins[i + 1]
             value = arr[i]
             color = cmap(norm(value))
-            rect = Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, edgecolor=(1.0, 1.0, 1.0, 0.12), linewidth=0.6, alpha=0.95, zorder=2)
+            rect = Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, edgecolor=(1.0, 1.0, 1.0, 0.12),
+                             linewidth=0.6, alpha=0.95, zorder=2)
             ax.add_patch(rect)
             cx = (x0 + x1) / 2.0
             cy = (y0 + y1) / 2.0
@@ -644,10 +605,10 @@ with col_field:
 
     DISPLAY_WIDTH = 780
 
-    # Create placeholder for Pass Map (so it visually appears above the heatmap)
+    # Reserve placeholder so Pass Map appears visually above heatmap
     pass_map_placeholder = st.empty()
 
-    # ---- Heatmap (render & handle click BEFORE drawing pass map image) ----
+    # ---- Heatmap (render & handle click first) ----
     st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap (clique em um quadrante para filtrar o Pass Map)</h4>', unsafe_allow_html=True)
     heat_img, hax, hfig = draw_corridor_heatmap(df_base)
     heat_click = streamlit_image_coordinates(heat_img, width=DISPLAY_WIDTH)
@@ -665,43 +626,38 @@ with col_field:
         ix = max(0, min(5, ix))
         x0, x1 = x_bins[ix], x_bins[ix + 1]
         if field_y >= LANE_LEFT_MIN:
-            cname = "left"
-            y0, y1 = LANE_LEFT_MIN, FIELD_Y
+            cname = "left"; y0, y1 = LANE_LEFT_MIN, FIELD_Y
         elif field_y < LANE_RIGHT_MAX:
-            cname = "right"
-            y0, y1 = 0.0, LANE_RIGHT_MAX
+            cname = "right"; y0, y1 = 0.0, LANE_RIGHT_MAX
         else:
-            cname = "center"
-            y0, y1 = LANE_RIGHT_MAX, LANE_LEFT_MIN
+            cname = "center"; y0, y1 = LANE_RIGHT_MAX, LANE_LEFT_MIN
         st.session_state["heat_selection"] = {"ix": int(ix), "corridor": cname, "x0": float(x0), "x1": float(x1), "y0": float(y0), "y1": float(y1)}
     plt.close(hfig)  # free memory
 
-    # Apply selection to define df_to_draw
-    df_to_draw = df_base
-    if st.session_state["heat_selection"] is not None:
-        sel = st.session_state["heat_selection"]
-        df_to_draw = df_base[
-            (df_base["x_end"] >= sel["x0"])
-            & (df_base["x_end"] < sel["x1"])
-            & (df_base["y_end"] >= sel["y0"])
-            & (df_base["y_end"] < sel["y1"])
-        ].reset_index(drop=True)
-
-    # Precompute stats for right column
-    stats = compute_stats(df_to_draw)
-
-    # Draw pass map image (based on current selection) and render it inside placeholder with title + clear button under title
-    img_obj, ax, fig = draw_pass_map(df_to_draw, title=f"Pass Map — {selected_match}")
-
+    # ---- Render Pass Map placeholder content: title + clear button (so clear can affect selection before drawing map) ----
     with pass_map_placeholder.container():
         st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (clique no start dot)</h4>', unsafe_allow_html=True)
-        # Clear button just below title (works and relies on Streamlit rerun behavior)
+        # Clear button under title (clears selection in the same run)
         if st.button("Limpar filtro do quadrante", key="clear_heat_filter"):
             st.session_state["heat_selection"] = None
-        # Render interactive pass map
+
+        # Now compute df_to_draw AFTER handling clear button (so button takes immediate effect)
+        df_to_draw = df_base
+        if st.session_state["heat_selection"] is not None:
+            sel = st.session_state["heat_selection"]
+            df_to_draw = df_base[
+                (df_base["x_end"] >= sel["x0"])
+                & (df_base["x_end"] < sel["x1"])
+                & (df_base["y_end"] >= sel["y0"])
+                & (df_base["y_end"] < sel["y1"])
+            ].reset_index(drop=True)
+
+        # Draw pass map with current selection and render it interactively
+        img_obj, ax, fig = draw_pass_map(df_to_draw, title=f"Pass Map — {selected_match}")
         click = streamlit_image_coordinates(img_obj, width=DISPLAY_WIDTH)
 
     selected_pass = None
+    # Process click on pass map (select pass)
     if click is not None:
         real_w, real_h = img_obj.size
         disp_w = click["width"]
@@ -719,7 +675,7 @@ with col_field:
             selected_pass = candidates.iloc[0]
     plt.close(fig)
 
-    # Show selection info and button (also available here for visibility)
+    # Show info about current heatmap selection and counts
     if st.session_state["heat_selection"] is not None:
         sel = st.session_state["heat_selection"]
         sel_mask = (
@@ -735,6 +691,7 @@ with col_field:
             unsafe_allow_html=True,
         )
 
+    # ---- Selected Event and data table ----
     st.divider()
     st.subheader("Selected Event")
     if selected_pass is None:
@@ -789,10 +746,10 @@ with col_field:
 
 # RIGHT: Statistics (based on df_to_draw)
 with col_stats:
+    stats_safe = compute_stats(df_to_draw)
     with st.expander("General Statistics", expanded=False):
         st.markdown('<div class="stats-section-title">Overview</div>', unsafe_allow_html=True)
         row1, row2, row3 = st.columns(3)
-        stats_safe = stats if 'stats' in locals() else compute_stats(df_base)
         with row1:
             small_metric("Total Passes", f"{stats_safe['total_passes']}")
         with row2:
