@@ -606,7 +606,7 @@ with col_field:
     DISPLAY_WIDTH = 780
 
     # Reserve placeholder so Pass Map appears visually above heatmap
-    pass_map_placeholder = st.empty()
+    # (removed st.empty() placeholder to avoid an empty rounded box in the UI)
 
     # ---- Heatmap (render & handle click first) ----
     st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap</h4>', unsafe_allow_html=True)
@@ -635,7 +635,8 @@ with col_field:
     plt.close(hfig)  # free memory
 
     # ---- Render Pass Map placeholder content: title + clear button (so clear can affect selection before drawing map) ----
-    with pass_map_placeholder.container():
+    # Use a container directly (removed prior st.empty to avoid empty UI element)
+    with st.container():
         st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map</h4>', unsafe_allow_html=True)
         # Clear button under title (clears selection in the same run)
         if st.button("Limpar filtro do quadrante", key="clear_heat_filter"):
