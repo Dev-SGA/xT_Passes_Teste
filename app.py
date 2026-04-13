@@ -24,10 +24,10 @@ st.markdown(
     """
     <style>
     .small-metric { padding: 6px 8px; }
-    .small-metric .label { font-size: 12px; color: #444444; margin-bottom: 3px; }
-    .small-metric .value { font-size: 18px; font-weight: 600; color: #222222; }
-    .small-metric .delta { font-size: 11px; color: #666666; margin-top: 4px; }
-    .stats-section-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #333333; }
+    .small-metric .label { font-size: 12px; color: #ffffff; margin-bottom: 3px; }
+    .small-metric .value { font-size: 18px; font-weight: 600; color: #ffffff; }
+    .small-metric .delta { font-size: 11px; color: #e6e6e6; margin-top: 4px; }
+    .stats-section-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #ffffff; }
     </style>
     """,
     unsafe_allow_html=True,
