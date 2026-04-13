@@ -369,7 +369,7 @@ def compute_stats(df: pd.DataFrame) -> dict:
     lateral_success = int((df["is_lateral"] & df["is_won"]).sum())
     pct_lateral = (lateral_total / total_passes * 100.0) if total_passes else 0.0
 
-    # --- Switch Pass ---
+    # --- Switch Pass (kept for internal use only; not shown as block) ---
     switch_total = int(df["switch"].sum())
     switch_success = int((df["switch"] & df["is_won"]).sum())
     switch_unsuccess = switch_total - switch_success
@@ -388,7 +388,7 @@ def compute_stats(df: pd.DataFrame) -> dict:
         prog_wyscout_success / prog_wyscout_total * 100.0
     ) if prog_wyscout_total else 0.0
 
-    # --- xT ---
+    # --- xT (progressive & overall successful) ---
     prog_success_mask = df["is_progressive_wyscout"] & (df["outcome"] == "successful")
     xt_prog_sum = float(df.loc[prog_success_mask, "delta_xt"].sum())
     xt_prog_mean = (
@@ -396,13 +396,14 @@ def compute_stats(df: pd.DataFrame) -> dict:
         if prog_success_mask.any() else 0.0
     )
 
+    # Note: overall successful xT kept internally but not shown in the modified UI
     xt_total_sum = float(df.loc[df["outcome"] == "successful", "delta_xt"].sum())
     xt_total_mean = (
         float(df.loc[df["outcome"] == "successful", "delta_xt"].mean())
         if (df["outcome"] == "successful").any() else 0.0
     )
 
-    # --- Positive ΔxT ---
+    # --- Positive ΔxT (successful only) ---
     positive_xt_mask = (df["outcome"] == "successful") & (df["delta_xt"] > 0)
     positive_xt_total = int(positive_xt_mask.sum())
     positive_xt_sum = float(df.loc[positive_xt_mask, "delta_xt"].sum())
@@ -421,14 +422,14 @@ def compute_stats(df: pd.DataFrame) -> dict:
         # Direction
         "forward_total": forward_total,
         "forward_success": forward_success,
-        "pct_forward": pct_forward,  # keep full float, format later
+        "pct_forward": pct_forward,
         "backward_total": backward_total,
         "backward_success": backward_success,
         "pct_backward": pct_backward,
         "lateral_total": lateral_total,
         "lateral_success": lateral_success,
         "pct_lateral": pct_lateral,
-        # Switch (kept in stats but not shown per user's request)
+        # Switch (kept but not displayed as a block per request)
         "switch_total": switch_total,
         "switch_success": switch_success,
         "switch_unsuccess": switch_unsuccess,
@@ -439,7 +440,7 @@ def compute_stats(df: pd.DataFrame) -> dict:
         "prog_wyscout_success": prog_wyscout_success,
         "pct_progressive_wyscout": round(pct_progressive_wyscout, 2),
         "prog_wyscout_accuracy_pct": round(prog_wyscout_accuracy, 2),
-        # xT
+        # xT (only return values needed for the UI)
         "xt_prog_sum": round(xt_prog_sum, 4),
         "xt_prog_mean": round(xt_prog_mean, 4),
         "xt_total_sum": round(xt_total_sum, 4),
@@ -560,65 +561,46 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 
 
 # ==========================
-# Sidebar
-# ==========================
-st.sidebar.header("Match Selection")
-selected_match = st.sidebar.radio(
-    "Choose the match", list(full_data.keys()), index=0
-)
-
-st.sidebar.header("Pass Filter")
-pass_filter = st.sidebar.radio(
-    "Filter passes",
-    [
-        "All Passes",
-        "Successful Only",
-        "Unsuccessful Only",
-        "Forward Only",
-        "Backward Only",
-        "Lateral Only",
-        "Progressive Only (Wyscout)",
-        "Positive ΔxT Only",
-        "Switch Only",
-    ],
-    index=0,
-)
-
-df = full_data[selected_match].copy()
-
-if pass_filter == "Successful Only":
-    df = df[df["is_won"]].reset_index(drop=True)
-elif pass_filter == "Unsuccessful Only":
-    df = df[~df["is_won"]].reset_index(drop=True)
-elif pass_filter == "Forward Only":
-    df = df[df["is_forward"]].reset_index(drop=True)
-elif pass_filter == "Backward Only":
-    df = df[df["is_backward"]].reset_index(drop=True)
-elif pass_filter == "Lateral Only":
-    df = df[df["is_lateral"]].reset_index(drop=True)
-elif pass_filter == "Progressive Only (Wyscout)":
-    df = df[df["is_progressive_wyscout"]].reset_index(drop=True)
-elif pass_filter == "Positive ΔxT Only":
-    df = df[(df["outcome"] == "successful") & (df["delta_xt"] > 0)].reset_index(drop=True)
-elif pass_filter == "Switch Only":
-    df = df[df["switch"]].reset_index(drop=True)
-
-stats = compute_stats(df)
-
-# ==========================
-# Caption
+# Layout
 # ==========================
 st.caption("Click the start dot to select the pass event.")
 
-# ==========================
-# Layout: field LEFT, stats RIGHT (per user request)
-# ==========================
+# Main columns: left = filters + field, right = stats
 col_field, col_stats = st.columns([2, 1], gap="large")
 
-# LEFT: Pass map + selection details
+# LEFT: Filters + Pass map + selection details
 with col_field:
-    st.subheader("Pass Map (click the start dot)")
+    # --- Filters (moved from sidebar) ---
+    st.subheader("Match Selection")
+    selected_match = st.radio("Choose the match", list(full_data.keys()), index=0)
 
+    st.subheader("Pass Filter")
+    pass_filter = st.radio(
+        "Filter passes",
+        [
+            "Successful Only",
+            "Unsuccessful Only",
+            "Progressive Only (All)",      # includes both successful and unsuccessful
+            "Positive xT Only (Successful)"  # only successful passes with delta_xt > 0
+        ],
+        index=0,
+    )
+
+    # Subset dataframe according to selections
+    df = full_data[selected_match].copy()
+
+    if pass_filter == "Successful Only":
+        df = df[df["is_won"]].reset_index(drop=True)
+    elif pass_filter == "Unsuccessful Only":
+        df = df[~df["is_won"]].reset_index(drop=True)
+    elif pass_filter == "Progressive Only (All)":
+        df = df[df["is_progressive_wyscout"]].reset_index(drop=True)
+    elif pass_filter == "Positive xT Only (Successful)":
+        df = df[(df["outcome"] == "successful") & (df["delta_xt"] > 0)].reset_index(drop=True)
+
+    stats = compute_stats(df)
+
+    st.subheader("Pass Map (click the start dot)")
     img_obj, ax, fig = draw_pass_map(df, title=f"Pass Map — {selected_match}")
 
     DISPLAY_WIDTH = 780
