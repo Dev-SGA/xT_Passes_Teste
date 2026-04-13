@@ -785,7 +785,7 @@ with col_stats:
             small_metric("xT Mean (Progressive)", f"{stats_safe['xt_prog_mean']:.1f}")
         xt3, xt4 = st.columns(2)
         with xt3:
-            small_metric("xT Σ (Positive ΔxT)", f"{stats_safe['positive_xt_sum']:.14f}")
+            small_metric("xT Σ (Positive ΔxT)", f"{stats_safe['positive_xt_sum']:.1f}")
         with xt4:
             small_metric("xT Mean (Positive ΔxT)", f"{stats_safe['positive_xt_mean']:.1f}")
     st.divider()
