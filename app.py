@@ -8,8 +8,10 @@ import numpy as np
 from PIL import Image
 from io import BytesIO
 from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch
+from matplotlib.patches import FancyArrowPatch, Rectangle
 from streamlit_image_coordinates import streamlit_image_coordinates
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize, ListedColormap
 
 # ==========================
 # Page Configuration
@@ -17,17 +19,53 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive)")
 
 # ==========================
-# Small CSS for compact metrics
+# Small CSS for compact metrics (colors adjusted for dark background)
 # ==========================
-# A small, elegant style for the numeric stats to reduce font size slightly
 st.markdown(
     """
     <style>
+    /* Container spacing */
     .small-metric { padding: 6px 8px; }
-    .small-metric .label { font-size: 12px; color: #ffffff; margin-bottom: 3px; }
-    .small-metric .value { font-size: 18px; font-weight: 600; color: #ffffff; }
-    .small-metric .delta { font-size: 11px; color: #e6e6e6; margin-top: 4px; }
-    .stats-section-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #ffffff; }
+
+    /* Labels (small) */
+    .small-metric .label {
+      font-size: 12px;
+      color: #ffffff;            /* white label for dark backgrounds */
+      margin-bottom: 3px;
+      opacity: 0.95;
+    }
+
+    /* Main value */
+    .small-metric .value {
+      font-size: 18px;
+      font-weight: 600;
+      color: #ffffff;            /* white value */
+    }
+
+    /* Delta / secondary text */
+    .small-metric .delta {
+      font-size: 11px;
+      color: #e6e6e6;            /* slightly off-white for hierarchy */
+      margin-top: 4px;
+    }
+
+    /* Section titles inside expanders */
+    .stats-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #ffffff;            /* white title */
+    }
+
+    /* Optional: improve contrast on the legend/expander headers */
+    .streamlit-expanderHeader {
+      color: #ffffff !important;
+    }
+
+    /* Make the expander background slightly transparent if needed */
+    .streamlit-expander {
+      background: rgba(255,255,255,0.02);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -593,6 +631,103 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 
 
 # ==========================
+# Draw corridor heatmap field
+# ==========================
+HEAT_FIG_W, HEAT_FIG_H = 7.9, 3.0  # compact heatmap area
+
+
+def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap (passes completed)"):
+    """
+    Draw a full pitch and overlay three corridors (left, center, right),
+    each divided into 6 equal parts along the x-axis. Color each cell by the
+    count of successful passes whose end point is inside that cell.
+    """
+    # We consider only completed/successful passes for the heatmap (por 'passes completados')
+    df_success = df[df["is_won"]].copy()
+
+    # x bins (6 parts equal across whole pitch)
+    x_bins = np.linspace(0.0, FIELD_X, 7)  # 6 intervals
+
+    # corridor y ranges
+    left_y0, left_y1 = LANE_LEFT_MIN, FIELD_Y
+    right_y0, right_y1 = 0.0, LANE_RIGHT_MAX
+    center_y0, center_y1 = LANE_RIGHT_MAX, LANE_LEFT_MIN
+
+    corridors = {
+        "left": (left_y0, left_y1),
+        "center": (center_y0, center_y1),
+        "right": (right_y0, right_y1),
+    }
+
+    # counts dict: corridor -> array of 6 counts
+    counts = {}
+    for cname, (y0, y1) in corridors.items():
+        arr = np.zeros(6, dtype=int)
+        for i in range(6):
+            x0, x1 = x_bins[i], x_bins[i + 1]
+            mask = (
+                (df_success["x_end"] >= x0)
+                & (df_success["x_end"] < x1)
+                & (df_success["y_end"] >= y0)
+                & (df_success["y_end"] < y1)
+            )
+            arr[i] = int(mask.sum())
+        counts[cname] = arr
+
+    # overall max for normalization
+    all_vals = np.concatenate([counts[c] for c in counts])
+    vmax = max(1, int(all_vals.max()))
+
+    # Prepare figure
+    pitch = Pitch(pitch_type="statsbomb", pitch_color="#f5f5f5", line_color="#4a4a4a")
+    fig, ax = pitch.draw(figsize=(HEAT_FIG_W, HEAT_FIG_H))
+    fig.set_dpi(FIG_DPI)
+
+    # Overlay rectangles for each corridor bin
+    cmap = plt.get_cmap("OrRd")
+    norm = Normalize(vmin=0, vmax=vmax)
+
+    for cname, (y0, y1) in corridors.items():
+        arr = counts[cname]
+        for i in range(6):
+            x0, x1 = x_bins[i], x_bins[i + 1]
+            value = arr[i]
+            color = cmap(norm(value))
+            rect = Rectangle((x0, y0), x1 - x0, y1 - y0,
+                             facecolor=color, edgecolor="white", linewidth=0.8, alpha=0.9, zorder=2)
+            ax.add_patch(rect)
+
+            # center text
+            cx = (x0 + x1) / 2.0
+            cy = (y0 + y1) / 2.0
+            ax.text(cx, cy, str(value), ha="center", va="center", color="black" if value < vmax * 0.6 else "white",
+                    fontsize=9, fontweight="600", zorder=3)
+
+    # Titles/labels
+    ax.set_title(title, fontsize=11)
+
+    # Add small corridor labels on the right
+    ax.text(FIELD_X + 1.0, (left_y0 + left_y1) / 2, "Left", va="center", ha="left", fontsize=10)
+    ax.text(FIELD_X + 1.0, (center_y0 + center_y1) / 2, "Center", va="center", ha="left", fontsize=10)
+    ax.text(FIELD_X + 1.0, (right_y0 + right_y1) / 2, "Right", va="center", ha="left", fontsize=10)
+
+    # Colorbar
+    sm = ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array(all_vals)
+    cbar = fig.colorbar(sm, ax=ax, orientation="vertical", fraction=0.035, pad=0.02)
+    cbar.set_label("Completed passes (count)")
+
+    fig.tight_layout()
+    fig.canvas.draw()
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=FIG_DPI)
+    buf.seek(0)
+    img_obj = Image.open(buf)
+    return img_obj, ax, fig
+
+
+# ==========================
 # Layout
 # ==========================
 st.caption("Click the start dot to select the pass event.")
@@ -751,6 +886,15 @@ with col_field:
             use_container_width=True,
             height=400,
         )
+
+    # -----------------------------
+    # Corridor heatmap field below
+    # -----------------------------
+    st.divider()
+    st.subheader("Corridor Heatmaps (por passes completados por célula)")
+    heat_img, hax, hfig = draw_corridor_heatmap(df)
+    st.image(heat_img, use_column_width=True)
+    plt.close(hfig)
 
 # RIGHT: Statistics (now inside two expanders)
 with col_stats:
