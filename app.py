@@ -421,14 +421,14 @@ def compute_stats(df: pd.DataFrame) -> dict:
         # Direction
         "forward_total": forward_total,
         "forward_success": forward_success,
-        "pct_forward": round(pct_forward, 2),
+        "pct_forward": pct_forward,  # keep full float, format later
         "backward_total": backward_total,
         "backward_success": backward_success,
-        "pct_backward": round(pct_backward, 2),
+        "pct_backward": pct_backward,
         "lateral_total": lateral_total,
         "lateral_success": lateral_success,
-        "pct_lateral": round(pct_lateral, 2),
-        # Switch
+        "pct_lateral": pct_lateral,
+        # Switch (kept in stats but not shown per user's request)
         "switch_total": switch_total,
         "switch_success": switch_success,
         "switch_unsuccess": switch_unsuccess,
@@ -527,8 +527,6 @@ def draw_pass_map(df: pd.DataFrame, title: str):
                label="Unsuccessful Pass"),
         Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.5,
                label="Progressive Pass (Wyscout)"),
-        Line2D([0], [0], color=COLOR_SWITCH, lw=2.5,
-               label="Switch Pass"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
                markeredgecolor="white", markersize=6, label="Start point (click)"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
@@ -613,73 +611,12 @@ stats = compute_stats(df)
 st.caption("Click the start dot to select the pass event.")
 
 # ==========================
-# Layout
+# Layout: field LEFT, stats RIGHT (per user request)
 # ==========================
-col_stats, col_right = st.columns([1, 2], gap="large")
+col_field, col_stats = st.columns([2, 1], gap="large")
 
-with col_stats:
-    st.subheader("General Statistics")
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Passes", stats["total_passes"])
-    c2.metric("Successful", stats["successful_passes"])
-    c3.metric("Accuracy", f'{stats["accuracy_pct"]:.1f}%')
-
-    st.divider()
-
-    # --- Pass Direction (angle-based) ---
-    st.subheader("Pass Direction")
-    dir1, dir2, dir3 = st.columns(3)
-    dir1.metric("⬆️ Forward", f'{stats["forward_total"]} ({stats["pct_forward"]:.1f}%)')
-    dir2.metric("⬇️ Backward", f'{stats["backward_total"]} ({stats["pct_backward"]:.1f}%)')
-    dir3.metric("↔️ Lateral", f'{stats["lateral_total"]} ({stats["pct_lateral"]:.1f}%)')
-
-    st.divider()
-
-    # --- Progressive Wyscout ---
-    st.subheader("Progressive Passes (Wyscout)")
-    pw1, pw2, pw3 = st.columns(3)
-    pw1.metric("Total", stats["prog_wyscout_total"])
-    pw2.metric("Successful", stats["prog_wyscout_success"])
-    pw3.metric("Accuracy", f'{stats["prog_wyscout_accuracy_pct"]:.1f}%')
-
-    pw4, pw5 = st.columns(2)
-    pw4.metric("% of Total", f'{stats["pct_progressive_wyscout"]:.1f}%')
-    pw5.metric("xT Σ (prog.)", f'{stats["xt_prog_sum"]:.4f}')
-
-    st.divider()
-
-    # --- xT Summary ---
-    st.subheader("Expected Threat (xT)")
-    xt1, xt2 = st.columns(2)
-    xt1.metric("xT Total (successful)", f'{stats["xt_total_sum"]:.4f}')
-    xt2.metric("xT Mean (successful)", f'{stats["xt_total_mean"]:.4f}')
-
-    xt3, xt4 = st.columns(2)
-    xt3.metric("xT Σ Progressive", f'{stats["xt_prog_sum"]:.4f}')
-    xt4.metric("xT Mean Progressive", f'{stats["xt_prog_mean"]:.4f}')
-
-    st.divider()
-
-    # --- Positive ΔxT ---
-    st.subheader("Positive ΔxT Passes")
-    pxt1, pxt2, pxt3 = st.columns(3)
-    pxt1.metric("Count", stats["positive_xt_total"])
-    pxt2.metric("Σ ΔxT", f'{stats["positive_xt_sum"]:.4f}')
-    pxt3.metric("Mean ΔxT", f'{stats["positive_xt_mean"]:.4f}')
-
-    st.divider()
-
-    # --- Switch Passes ---
-    st.subheader("Switch Passes")
-    s1, s2 = st.columns(2)
-    s1.metric("Total", stats["switch_total"])
-    s2.metric("Successful", stats["switch_success"])
-    sw1, sw2 = st.columns(2)
-    sw1.metric("Accuracy", f'{stats["switch_accuracy_pct"]:.1f}%')
-    sw2.metric("% of Total Passes", f'{stats["switch_pct_of_total"]:.1f}%')
-
-with col_right:
+# LEFT: Pass map + selection details
+with col_field:
     st.subheader("Pass Map (click the start dot)")
 
     img_obj, ax, fig = draw_pass_map(df, title=f"Pass Map — {selected_match}")
@@ -775,9 +712,7 @@ with col_right:
         else:
             st.warning("No video is attached to this event.")
 
-    # ==========================
     # Data Table (expandable)
-    # ==========================
     with st.expander("📊 Full Pass Data Table"):
         display_cols = [
             "number", "type", "outcome", "direction",
@@ -798,3 +733,47 @@ with col_right:
             use_container_width=True,
             height=400,
         )
+
+# RIGHT: Statistics (per user request)
+with col_stats:
+    st.subheader("General Statistics")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Passes", stats["total_passes"])
+    c2.metric("Successful", stats["successful_passes"])
+    c3.metric("Accuracy", f'{stats["accuracy_pct"]:.1f}%')
+
+    st.divider()
+
+    # --- Pass Direction (angle-based) ---
+    st.subheader("Pass Direction")
+    dir1, dir2, dir3 = st.columns(3)
+    # Per user's request: percentages without decimal places
+    dir1.metric("⬆️ Forward", f'{stats["forward_total"]} ({stats["pct_forward"]:.0f}%)')
+    dir2.metric("⬇️ Backward", f'{stats["backward_total"]} ({stats["pct_backward"]:.0f}%)')
+    dir3.metric("↔️ Lateral", f'{stats["lateral_total"]} ({stats["pct_lateral"]:.0f}%)')
+
+    st.divider()
+
+    # --- Progressive Wyscout ---
+    st.subheader("Progressive Passes (Wyscout)")
+    pw1, pw2, pw3, pw4 = st.columns(4)
+    pw1.metric("Total", stats["prog_wyscout_total"])
+    pw2.metric("Successful", stats["prog_wyscout_success"])
+    pw3.metric("Accuracy", f'{stats["prog_wyscout_accuracy_pct"]:.1f}%')
+    pw4.metric("% of Total", f'{stats["pct_progressive_wyscout"]:.1f}%')
+
+    st.divider()
+
+    # --- Expected Threat (per user request: only progressive & positive metrics) ---
+    st.subheader("Expected Threat (xT)")
+
+    xt1, xt2 = st.columns(2)
+    xt1.metric("xT Σ (Progressive)", f'{stats["xt_prog_sum"]:.4f}')
+    xt2.metric("xT Mean (Progressive)", f'{stats["xt_prog_mean"]:.4f}')
+
+    xt3, xt4 = st.columns(2)
+    xt3.metric("xT Σ (Positive ΔxT)", f'{stats["positive_xt_sum"]:.4f}')
+    xt4.metric("xT Mean (Positive ΔxT)", f'{stats["positive_xt_mean"]:.4f}')
+
+    st.divider()
