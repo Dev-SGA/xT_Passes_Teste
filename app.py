@@ -896,9 +896,6 @@ with col_field:
             "y1": float(y1),
         }
 
-        # After storing selection, trigger rerun so Pass Map (que vem antes) seja redesenhado com o filtro aplicado
-        st.experimental_rerun()
-
     # close heatmap figure (we already have heat_img)
     plt.close(hfig)
 
@@ -919,7 +916,6 @@ with col_field:
         )
         if st.button("Limpar filtro do quadrante"):
             st.session_state["heat_selection"] = None
-            st.experimental_rerun()
     else:
         st.markdown("<div style='color:#cfcfcf; margin-top:6px;'>Nenhum quadrante selecionado.</div>", unsafe_allow_html=True)
 
@@ -1044,15 +1040,15 @@ with col_stats:
         st.markdown('<div class="stats-section-title">Expected Threat (xT)</div>', unsafe_allow_html=True)
         xt1, xt2 = st.columns(2)
         with xt1:
-            small_metric("xT Σ (Progressive)", f"{stats['xt_prog_sum']:.4f}")
+            small_metric("xT Σ (Progressive)", f"{stats['xt_prog_sum']:.1f}")
         with xt2:
-            small_metric("xT Mean (Progressive)", f"{stats['xt_prog_mean']:.4f}")
+            small_metric("xT Mean (Progressive)", f"{stats['xt_prog_mean']:.1f}")
 
         xt3, xt4 = st.columns(2)
         with xt3:
-            small_metric("xT Σ (Positive ΔxT)", f"{stats['positive_xt_sum']:.4f}")
+            small_metric("xT Σ (Positive ΔxT)", f"{stats['positive_xt_sum']:.1f}")
         with xt4:
-            small_metric("xT Mean (Positive ΔxT)", f"{stats['positive_xt_mean']:.4f}")
+            small_metric("xT Mean (Positive ΔxT)", f"{stats['positive_xt_mean']:.1f}")
 
     st.divider()
     st.caption("Notas: 'Progressive' segue a definição Wyscout; ΔxT só é contabilizado para passes bem-sucedidos.")
