@@ -16,7 +16,7 @@ from matplotlib.colors import Normalize, ListedColormap, LinearSegmentedColormap
 # ==========================
 # Page Configuration
 # ==========================
-st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive) — v5")
+st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive) — v5.1")
 
 # ==========================
 # CSS
@@ -111,7 +111,7 @@ def small_metric(label: str, value: str, delta: str | None = None):
 # ==========================
 # Configuration / constants
 # ==========================
-st.title("Pass Map Dashboard (Interactive) — v5")
+st.title("Pass Map Dashboard (Interactive) — v5.1")
 
 FIELD_X, FIELD_Y = 120.0, 80.0
 HALF_LINE_X = FIELD_X / 2
@@ -520,10 +520,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
     for txt in legend.get_texts():
         txt.set_color("white")
     legend.get_frame().set_alpha(0.92)
-    arrow = FancyArrowPatch(
-        (0.45, 0.05), (0.55, 0.05), transform=fig.transFigure,
-        arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#cccccc",
-    )
+    arrow = FancyArrowPatch((0.45, 0.05), (0.55, 0.05), transform=fig.transFigure, arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#cccccc")
     fig.patches.append(arrow)
     fig.text(0.5, 0.02, "Attack Direction", ha="center", va="center", fontsize=9, color="#cccccc")
     fig.tight_layout()
@@ -698,11 +695,9 @@ with col_field:
 
     with pass_map_placeholder.container():
         st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (clique no start dot)</h4>', unsafe_allow_html=True)
-        # Clear button just below title (works and triggers immediate rerun)
+        # Clear button just below title (works and relies on Streamlit rerun behavior)
         if st.button("Limpar filtro do quadrante", key="clear_heat_filter"):
             st.session_state["heat_selection"] = None
-            # force immediate rerun so pass map refreshes without filter
-            st.experimental_rerun()
         # Render interactive pass map
         click = streamlit_image_coordinates(img_obj, width=DISPLAY_WIDTH)
 
