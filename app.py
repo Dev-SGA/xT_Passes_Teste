@@ -88,6 +88,9 @@ st.markdown(
       border-top: 1px solid rgba(255,255,255,0.07);
       margin: 14px 0;
     }
+
+    /* Make Streamlit subheaders slightly lighter on dark bg when we still use them */
+    .stSubheader { color: #ffffff !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -559,7 +562,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         else:
             # successful ordinary passes -> white, increased transparency
             color = COLOR_SUCCESS
-            alpha = 0.06  # made more transparent per request
+            alpha = 0.03  # made even more transparent per last request
 
         pitch.arrows(
             row["x_start"], row["y_start"],
@@ -582,7 +585,8 @@ def draw_pass_map(df: pd.DataFrame, title: str):
             edgecolors="white", linewidths=0.8, ax=ax, zorder=6, alpha=alpha,
         )
 
-    ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
+    # matplotlib title (inside figure) in white
+    ax.set_title(title, fontsize=12, color="#ffffff", pad=8)
 
     # Simplified legend: Successful, Unsuccessful, Progressive (labels in white)
     legend_elements = [
@@ -704,15 +708,16 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Zone Heatmap — Compl
                 fontsize=11, fontweight=fontw, zorder=4,
             )
 
-    ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
+    # matplotlib title (inside figure) in white
+    ax.set_title(title, fontsize=12, color="#ffffff", pad=8)
 
-    # Dashed corridor separators (kept for visual structure)
+    # Dashed corridor separators (kept for subtle structure)
     ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", linewidth=0.5, alpha=0.15,
                linestyle="--", zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", linewidth=0.5, alpha=0.15,
                linestyle="--", zorder=3)
 
-    # Remove colorbar and corridor description text per request: leave only the map
+    # Remove colorbar and corridor description text: leave only the map
 
     arrow = FancyArrowPatch(
         (0.45, 0.05), (0.55, 0.05), transform=fig.transFigure,
@@ -780,11 +785,14 @@ with col_field:
 
     stats = compute_stats(df)
 
+    # Display width used for both maps to ensure identical rendering width (alignment)
+    DISPLAY_WIDTH = 780
+
     # ---- Pass Map ----
-    st.subheader("Pass Map")
+    # Streamlit heading in white via markdown
+    st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (click the start dot)</h4>', unsafe_allow_html=True)
     img_obj, ax, fig = draw_pass_map(df, title=f"Pass Map — {selected_match}")
 
-    DISPLAY_WIDTH = 780
     click = streamlit_image_coordinates(img_obj, width=DISPLAY_WIDTH)
 
     selected_pass = None
@@ -815,11 +823,14 @@ with col_field:
 
     plt.close(fig)
 
+    # show pass map image at fixed width (same width for heatmap below)
+    st.image(img_obj, width=DISPLAY_WIDTH)
+
     # ---- Zone Heatmap (right below pass map) ----
     st.markdown("")  # small spacer
-    st.subheader("Zone Heatmap")
+    st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap</h4>', unsafe_allow_html=True)
     heat_img, hax, hfig = draw_corridor_heatmap(df)
-    st.image(heat_img, use_column_width=True)
+    st.image(heat_img, width=DISPLAY_WIDTH)
     plt.close(hfig)
 
     # ---- Selected Event (moved below both maps) ----
