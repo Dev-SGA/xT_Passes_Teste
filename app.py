@@ -768,32 +768,125 @@ with col_filters:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# MIDDLE: Field + heatmap + selection details
+# Ensure session state keys
+if "heat_selection" not in st.session_state:
+    st.session_state["heat_selection"] = None
+if "last_match" not in st.session_state:
+    st.session_state["last_match"] = selected_match
+if "last_filter" not in st.session_state:
+    st.session_state["last_filter"] = pass_filter
+
+# Clear heat selection automatically if match or filter changed
+if st.session_state["last_match"] != selected_match:
+    st.session_state["heat_selection"] = None
+    st.session_state["last_match"] = selected_match
+if st.session_state["last_filter"] != pass_filter:
+    st.session_state["heat_selection"] = None
+    st.session_state["last_filter"] = pass_filter
+
+# MIDDLE: Field + heatmap + selection details (updated for interactive heatmap)
 with col_field:
-    df = full_data[selected_match].copy()
+    df_base = full_data[selected_match].copy()
 
     if pass_filter == "All Passes":
-        df = df.reset_index(drop=True)
+        df_base = df_base.reset_index(drop=True)
     elif pass_filter == "Successful Only":
-        df = df[df["is_won"]].reset_index(drop=True)
+        df_base = df_base[df_base["is_won"]].reset_index(drop=True)
     elif pass_filter == "Unsuccessful Only":
-        df = df[~df["is_won"]].reset_index(drop=True)
+        df_base = df_base[~df_base["is_won"]].reset_index(drop=True)
     elif pass_filter == "Progressive Only (All)":
-        df = df[df["is_progressive_wyscout"]].reset_index(drop=True)
+        df_base = df_base[df_base["is_progressive_wyscout"]].reset_index(drop=True)
     elif pass_filter == "Positive xT Only (Successful)":
-        df = df[(df["outcome"] == "successful") & (df["delta_xt"] > 0)].reset_index(drop=True)
-
-    stats = compute_stats(df)
+        df_base = df_base[(df_base["outcome"] == "successful") & (df_base["delta_xt"] > 0)].reset_index(drop=True)
 
     # Display width used for both maps to ensure identical rendering width (alignment)
     DISPLAY_WIDTH = 780
 
-    # ---- Pass Map ----
-    # Streamlit heading in white via markdown
-    st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (click the start dot)</h4>', unsafe_allow_html=True)
-    img_obj, ax, fig = draw_pass_map(df, title=f"Pass Map — {selected_match}")
+    # ---- Interactive Zone Heatmap (draw first so selection filters the pass map) ----
+    st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Zone Heatmap (clique em um quadrante)</h4>', unsafe_allow_html=True)
+    heat_img, hax, hfig = draw_corridor_heatmap(df_base)
+    heat_click = streamlit_image_coordinates(heat_img, width=DISPLAY_WIDTH)
 
-    # interactive clickable image (streamlit_image_coordinates displays the image)
+    # compute selection if user clicked the heatmap
+    if heat_click is not None:
+        real_w, real_h = heat_img.size
+        disp_w = heat_click["width"]
+        disp_h = heat_click["height"]
+
+        pixel_x = heat_click["x"] * (real_w / disp_w)
+        pixel_y = heat_click["y"] * (real_h / disp_h)
+        mpl_pixel_y = real_h - pixel_y
+
+        # convert pixel -> data coords using heatmap axis transform
+        field_x, field_y = hax.transData.inverted().transform((pixel_x, mpl_pixel_y))
+
+        # x bins and corridor ranges must match draw_corridor_heatmap()
+        x_bins = np.linspace(0.0, FIELD_X, 7)
+        # clamp index into [0,5]
+        ix = np.searchsorted(x_bins, field_x, side="right") - 1
+        ix = max(0, min(5, ix))
+        x0, x1 = x_bins[ix], x_bins[ix + 1]
+
+        if field_y >= LANE_LEFT_MIN:
+            cname = "left"
+            y0, y1 = LANE_LEFT_MIN, FIELD_Y
+        elif field_y < LANE_RIGHT_MAX:
+            cname = "right"
+            y0, y1 = 0.0, LANE_RIGHT_MAX
+        else:
+            cname = "center"
+            y0, y1 = LANE_RIGHT_MAX, LANE_LEFT_MIN
+
+        # store selection in session_state (so reruns keep it)
+        st.session_state["heat_selection"] = {
+            "ix": int(ix),
+            "corridor": cname,
+            "x0": float(x0),
+            "x1": float(x1),
+            "y0": float(y0),
+            "y1": float(y1),
+        }
+
+    # close heatmap figure to free memory (we already created heat_img)
+    plt.close(hfig)
+
+    # show current heatmap selection (if any) and provide clear button
+    if st.session_state["heat_selection"] is not None:
+        sel = st.session_state["heat_selection"]
+        sel_mask = (
+            (df_base["x_end"] >= sel["x0"])
+            & (df_base["x_end"] < sel["x1"])
+            & (df_base["y_end"] >= sel["y0"])
+            & (df_base["y_end"] < sel["y1"])
+        )
+        sel_count = int(sel_mask.sum())
+        st.markdown(
+            f"<div style='color:#ffffff; margin-top:6px;'>"
+            f"<strong>Filtro aplicado:</strong> corredor <code>{sel['corridor']}</code>, coluna X #{sel['ix']+1} — {sel_count} passes</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Limpar filtro do quadrante"):
+            st.session_state["heat_selection"] = None
+            st.experimental_rerun()
+    else:
+        st.markdown("<div style='color:#cfcfcf; margin-top:6px;'>Nenhum quadrante selecionado.</div>", unsafe_allow_html=True)
+
+    # ---- Apply heatmap selection to define the df used for the pass map ----
+    df_to_draw = df_base
+    if st.session_state["heat_selection"] is not None:
+        sel = st.session_state["heat_selection"]
+        df_to_draw = df_base[
+            (df_base["x_end"] >= sel["x0"])
+            & (df_base["x_end"] < sel["x1"])
+            & (df_base["y_end"] >= sel["y0"])
+            & (df_base["y_end"] < sel["y1"])
+        ].reset_index(drop=True)
+
+    # ---- Pass Map ----
+    st.markdown('<h4 style="color:#ffffff; margin:10px 0 6px 0;">Pass Map (clique no start dot)</h4>', unsafe_allow_html=True)
+    img_obj, ax, fig = draw_pass_map(df_to_draw, title=f"Pass Map — {selected_match}")
+
+    # interactive clickable image for pass selection
     click = streamlit_image_coordinates(img_obj, width=DISPLAY_WIDTH)
 
     selected_pass = None
@@ -809,7 +902,7 @@ with col_field:
 
         field_x, field_y = ax.transData.inverted().transform((pixel_x, mpl_pixel_y))
 
-        df_sel = df.copy()
+        df_sel = df_to_draw.copy()
         df_sel["dist"] = np.sqrt(
             (df_sel["x_start"] - field_x) ** 2
             + (df_sel["y_start"] - field_y) ** 2
@@ -824,19 +917,16 @@ with col_field:
 
     plt.close(fig)
 
-    # ---- Zone Heatmap (right below pass map) ----
+    # ---- Zone Heatmap (static re-display for alignment) ----
     st.markdown("")  # small spacer
-    st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap</h4>', unsafe_allow_html=True)
-    heat_img, hax, hfig = draw_corridor_heatmap(df)
     st.image(heat_img, width=DISPLAY_WIDTH)
-    plt.close(hfig)
 
     # ---- Selected Event (moved below both maps) ----
     st.divider()
     st.subheader("Selected Event")
 
     if selected_pass is None:
-        st.info("Click the start dot to inspect the pass details.")
+        st.info("Click the start dot para inspecionar os detalhes do passe.")
     else:
         st.success(
             f"Selected pass: #{int(selected_pass['number'])} ({selected_pass['type']})"
@@ -899,7 +989,7 @@ with col_field:
             "switch", "xt_start", "xt_end", "delta_xt",
         ]
         st.dataframe(
-            df[display_cols].style.format({
+            df_to_draw[display_cols].style.format({
                 "x_start": "{:.2f}", "y_start": "{:.2f}",
                 "x_end": "{:.2f}", "y_end": "{:.2f}",
                 "pass_distance": "{:.1f}",
@@ -911,6 +1001,13 @@ with col_field:
         )
 
 # RIGHT: Statistics
+# Recompute stats based on df_to_draw so the right panel reflects the heatmap selection
+try:
+    stats = compute_stats(df_to_draw)
+except Exception:
+    # fallback if df_to_draw not defined for any reason
+    stats = compute_stats(df_base)
+
 with col_stats:
     with st.expander("General Statistics", expanded=False):
         st.markdown('<div class="stats-section-title">Overview</div>', unsafe_allow_html=True)
