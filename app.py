@@ -636,7 +636,7 @@ with col_field:
 
     # ---- Render Pass Map placeholder content: title + clear button (so clear can affect selection before drawing map) ----
     with pass_map_placeholder.container():
-        st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map (clique no start dot)</h4>', unsafe_allow_html=True)
+        st.markdown('<h4 style="color:#ffffff; margin:0 0 6px 0;">Pass Map</h4>', unsafe_allow_html=True)
         # Clear button under title (clears selection in the same run)
         if st.button("Limpar filtro do quadrante", key="clear_heat_filter"):
             st.session_state["heat_selection"] = None
@@ -780,13 +780,13 @@ with col_stats:
         st.markdown('<div class="stats-section-title">Expected Threat (xT)</div>', unsafe_allow_html=True)
         xt1, xt2 = st.columns(2)
         with xt1:
-            small_metric("xT Σ (Progressive)", f"{stats_safe['xt_prog_sum']:.1f}")
+            small_metric("xT Σ (Progressive)", f"{stats_safe['xt_prog_sum']:.2f}")
         with xt2:
-            small_metric("xT Mean (Progressive)", f"{stats_safe['xt_prog_mean']:.1f}")
+            small_metric("xT Mean (Progressive)", f"{stats_safe['xt_prog_mean']:.2f}")
         xt3, xt4 = st.columns(2)
         with xt3:
-            small_metric("xT Σ (Positive ΔxT)", f"{stats_safe['positive_xt_sum']:.1f}")
+            small_metric("xT Σ (Positive ΔxT)", f"{stats_safe['positive_xt_sum']:.2f}")
         with xt4:
-            small_metric("xT Mean (Positive ΔxT)", f"{stats_safe['positive_xt_mean']:.1f}")
+            small_metric("xT Mean (Positive ΔxT)", f"{stats_safe['positive_xt_mean']:.2f}")
     st.divider()
     st.caption("Notas: 'Progressive' segue a definição Wyscout; ΔxT só é contabilizado para passes bem-sucedidos.")
