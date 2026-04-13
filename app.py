@@ -781,7 +781,7 @@ with col_field:
     stats = compute_stats(df)
 
     # ---- Pass Map ----
-    st.subheader("Pass Map (click the start dot)")
+    st.subheader("Pass Map")
     img_obj, ax, fig = draw_pass_map(df, title=f"Pass Map — {selected_match}")
 
     DISPLAY_WIDTH = 780
