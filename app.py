@@ -19,7 +19,7 @@ from matplotlib.colors import Normalize, ListedColormap
 st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive)")
 
 # ==========================
-# Small CSS for compact metrics (colors adjusted for dark background)
+# CSS
 # ==========================
 st.markdown(
     """
@@ -30,7 +30,7 @@ st.markdown(
     /* Labels (small) */
     .small-metric .label {
       font-size: 12px;
-      color: #ffffff;            /* white label for dark backgrounds */
+      color: #ffffff;
       margin-bottom: 3px;
       opacity: 0.95;
     }
@@ -39,13 +39,13 @@ st.markdown(
     .small-metric .value {
       font-size: 18px;
       font-weight: 600;
-      color: #ffffff;            /* white value */
+      color: #ffffff;
     }
 
     /* Delta / secondary text */
     .small-metric .delta {
       font-size: 11px;
-      color: #e6e6e6;            /* slightly off-white for hierarchy */
+      color: #e6e6e6;
       margin-top: 4px;
     }
 
@@ -54,17 +54,43 @@ st.markdown(
       font-size: 14px;
       font-weight: 600;
       margin-bottom: 6px;
-      color: #ffffff;            /* white title */
+      color: #ffffff;
     }
 
-    /* Optional: improve contrast on the legend/expander headers */
+    /* Expander headers */
     .streamlit-expanderHeader {
       color: #ffffff !important;
     }
 
-    /* Make the expander background slightly transparent if needed */
     .streamlit-expander {
       background: rgba(255,255,255,0.02);
+    }
+
+    /* ===== Filter sidebar background ===== */
+    div[data-testid="stHorizontalBlock"] > div:first-child > div[data-testid="stVerticalBlockBorderWrapper"] {
+      /* fallback — sometimes Streamlit nesting changes */
+    }
+
+    .filter-panel {
+      background: linear-gradient(168deg, rgba(30, 39, 56, 0.92) 0%, rgba(22, 28, 40, 0.97) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 24px 18px 20px 18px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.12);
+      backdrop-filter: blur(6px);
+    }
+
+    .filter-panel h3 {
+      font-size: 15px;
+      color: #c8d6e5;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .filter-panel .filter-divider {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      margin: 14px 0;
     }
     </style>
     """,
@@ -72,9 +98,6 @@ st.markdown(
 )
 
 def small_metric(label: str, value: str, delta: str | None = None):
-    """
-    Render a compact/controlled metric using simple HTML (for smaller font sizes).
-    """
     html = f"""
     <div class="small-metric">
       <div class="label">{label}</div>
@@ -107,7 +130,7 @@ LANE_RIGHT_MAX = 26.67
 
 NX, NY = 16, 12
 
-LATERAL_MIN_DIST = 12.0  # metres
+LATERAL_MIN_DIST = 12.0
 
 # Colours
 COLOR_SUCCESS = "#B0B0B0"
@@ -325,31 +348,20 @@ def progressive_wyscout(x_start, x_end) -> bool:
 
 
 def classify_pass_direction(x_start, y_start, x_end, y_end) -> str:
-    """
-    Angle-based classification:
-      - Forward:  angle within ±45° of attack direction (dx > 0 cone)
-      - Backward: angle within ±45° of own-goal direction (dx < 0 cone)
-      - Lateral:  everything else, BUT only if pass distance > 12m
-                  If distance <= 12m, force into forward or backward
-                  based on dx sign (dx >= 0 → forward, dx < 0 → backward)
-    """
     dx = x_end - x_start
     dy = y_end - y_start
     dist = np.sqrt(dx ** 2 + dy ** 2)
 
     angle_deg = np.degrees(np.arctan2(abs(dy), dx))
-    # angle_deg:  0° = pure forward, 90° = pure lateral, 180° = pure backward
 
     if angle_deg <= 45.0:
         return "forward"
     elif angle_deg >= 135.0:
         return "backward"
     else:
-        # Lateral zone — only if distance > 12m
         if dist > LATERAL_MIN_DIST:
             return "lateral"
         else:
-            # Short pass in lateral zone → force forward or backward
             if dx >= 0:
                 return "forward"
             else:
@@ -370,13 +382,11 @@ for match_name, events in matches_data.items():
     dfm["is_won"] = dfm["type"].str.contains("WON", case=False)
     dfm["outcome"] = np.where(dfm["is_won"], "successful", "failed")
 
-    # Switch pass
     dfm["switch"] = dfm.apply(
         lambda row: is_switch_pass(row["x_start"], row["y_start"], row["y_end"]),
         axis=1,
     )
 
-    # Direction classification (angle-based)
     dfm["direction"] = dfm.apply(
         lambda row: classify_pass_direction(
             row["x_start"], row["y_start"], row["x_end"], row["y_end"]
@@ -387,13 +397,11 @@ for match_name, events in matches_data.items():
     dfm["is_backward"] = dfm["direction"] == "backward"
     dfm["is_lateral"] = dfm["direction"] == "lateral"
 
-    # Progressive Wyscout
     dfm["is_progressive_wyscout"] = dfm.apply(
         lambda row: progressive_wyscout(row["x_start"], row["x_end"]),
         axis=1,
     )
 
-    # xT values
     dfm["xt_start"] = dfm.apply(lambda r: xt_value(r["x_start"], r["y_start"]), axis=1)
     dfm["xt_end"] = dfm.apply(lambda r: xt_value(r["x_end"], r["y_end"]), axis=1)
     dfm["delta_xt"] = np.where(
@@ -402,7 +410,6 @@ for match_name, events in matches_data.items():
         0.0,
     )
 
-    # Pass distance
     dfm["pass_distance"] = np.sqrt(
         (dfm["x_end"] - dfm["x_start"]) ** 2
         + (dfm["y_end"] - dfm["y_start"]) ** 2
@@ -426,7 +433,6 @@ def compute_stats(df: pd.DataFrame) -> dict:
 
     key_passes = int(df["video"].apply(has_video_value).sum())
 
-    # --- Direction stats ---
     forward_total = int(df["is_forward"].sum())
     forward_success = int((df["is_forward"] & df["is_won"]).sum())
     pct_forward = (forward_total / total_passes * 100.0) if total_passes else 0.0
@@ -439,14 +445,12 @@ def compute_stats(df: pd.DataFrame) -> dict:
     lateral_success = int((df["is_lateral"] & df["is_won"]).sum())
     pct_lateral = (lateral_total / total_passes * 100.0) if total_passes else 0.0
 
-    # --- Switch Pass (kept for internal use only; not shown as block) ---
     switch_total = int(df["switch"].sum())
     switch_success = int((df["switch"] & df["is_won"]).sum())
     switch_unsuccess = switch_total - switch_success
     switch_accuracy = (switch_success / switch_total * 100.0) if switch_total else 0.0
     switch_pct_of_total = (switch_total / total_passes * 100.0) if total_passes else 0.0
 
-    # --- Progressive Wyscout ---
     prog_wyscout_total = int(df["is_progressive_wyscout"].sum())
     prog_wyscout_success = int(
         (df["is_progressive_wyscout"] & df["is_won"]).sum()
@@ -458,7 +462,6 @@ def compute_stats(df: pd.DataFrame) -> dict:
         prog_wyscout_success / prog_wyscout_total * 100.0
     ) if prog_wyscout_total else 0.0
 
-    # --- xT (progressive & overall successful) ---
     prog_success_mask = df["is_progressive_wyscout"] & (df["outcome"] == "successful")
     xt_prog_sum = float(df.loc[prog_success_mask, "delta_xt"].sum())
     xt_prog_mean = (
@@ -466,14 +469,12 @@ def compute_stats(df: pd.DataFrame) -> dict:
         if prog_success_mask.any() else 0.0
     )
 
-    # Note: overall successful xT kept internally but not shown in the modified UI
     xt_total_sum = float(df.loc[df["outcome"] == "successful", "delta_xt"].sum())
     xt_total_mean = (
         float(df.loc[df["outcome"] == "successful", "delta_xt"].mean())
         if (df["outcome"] == "successful").any() else 0.0
     )
 
-    # --- Positive ΔxT (successful only) ---
     positive_xt_mask = (df["outcome"] == "successful") & (df["delta_xt"] > 0)
     positive_xt_total = int(positive_xt_mask.sum())
     positive_xt_sum = float(df.loc[positive_xt_mask, "delta_xt"].sum())
@@ -483,13 +484,11 @@ def compute_stats(df: pd.DataFrame) -> dict:
     )
 
     return {
-        # General
         "total_passes": total_passes,
         "successful_passes": successful,
         "unsuccessful_passes": unsuccessful,
         "accuracy_pct": round(accuracy, 2),
         "key_passes": key_passes,
-        # Direction
         "forward_total": forward_total,
         "forward_success": forward_success,
         "pct_forward": pct_forward,
@@ -499,23 +498,19 @@ def compute_stats(df: pd.DataFrame) -> dict:
         "lateral_total": lateral_total,
         "lateral_success": lateral_success,
         "pct_lateral": pct_lateral,
-        # Switch (kept but not displayed as a block per request)
         "switch_total": switch_total,
         "switch_success": switch_success,
         "switch_unsuccess": switch_unsuccess,
         "switch_accuracy_pct": round(switch_accuracy, 2),
         "switch_pct_of_total": round(switch_pct_of_total, 2),
-        # Progressive Wyscout
         "prog_wyscout_total": prog_wyscout_total,
         "prog_wyscout_success": prog_wyscout_success,
         "pct_progressive_wyscout": round(pct_progressive_wyscout, 2),
         "prog_wyscout_accuracy_pct": round(prog_wyscout_accuracy, 2),
-        # xT (only return values needed for the UI)
         "xt_prog_sum": round(xt_prog_sum, 4),
         "xt_prog_mean": round(xt_prog_mean, 4),
         "xt_total_sum": round(xt_total_sum, 4),
         "xt_total_mean": round(xt_total_mean, 4),
-        # Positive ΔxT
         "positive_xt_total": positive_xt_total,
         "positive_xt_sum": round(positive_xt_sum, 4),
         "positive_xt_mean": round(positive_xt_mean, 4),
@@ -532,14 +527,16 @@ FIG_DPI = 110
 def draw_pass_map(df: pd.DataFrame, title: str):
     pitch = Pitch(
         pitch_type="statsbomb",
-        pitch_color="#f5f5f5",
-        line_color="#4a4a4a",
+        pitch_color="#1a1a2e",
+        line_color="#e0e0e0",
+        line_alpha=0.4,
     )
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
+    fig.set_facecolor("#1a1a2e")
     fig.set_dpi(FIG_DPI)
 
-    ax.axvline(x=FINAL_THIRD_LINE_X, color="#FFD54F", linewidth=1.2, alpha=0.25)
-    ax.axvline(x=HALF_LINE_X, color="#aaaaaa", linewidth=0.8, alpha=0.15,
+    ax.axvline(x=FINAL_THIRD_LINE_X, color="#FFD54F", linewidth=1.0, alpha=0.18)
+    ax.axvline(x=HALF_LINE_X, color="#aaaaaa", linewidth=0.6, alpha=0.10,
                linestyle="--")
 
     START_DOT_SIZE = 45
@@ -549,9 +546,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
         is_sw = bool(row["switch"])
         is_prog_w = bool(row["is_progressive_wyscout"])
         has_vid = has_video_value(row["video"])
-        direction = row["direction"]
 
-        # Colour hierarchy: fail > switch > progressive Wyscout > direction
         if is_lost:
             if is_sw:
                 color = COLOR_SWITCH
@@ -567,7 +562,7 @@ def draw_pass_map(df: pd.DataFrame, title: str):
             alpha = 0.82
         else:
             color = COLOR_SUCCESS
-            alpha = 0.25
+            alpha = 0.35
 
         pitch.arrows(
             row["x_start"], row["y_start"],
@@ -589,10 +584,10 @@ def draw_pass_map(df: pd.DataFrame, title: str):
             edgecolors="white", linewidths=0.8, ax=ax, zorder=5, alpha=alpha,
         )
 
-    ax.set_title(title, fontsize=12)
+    ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
 
     legend_elements = [
-        Line2D([0], [0], color=COLOR_SUCCESS, lw=2.5, alpha=0.25,
+        Line2D([0], [0], color=COLOR_SUCCESS, lw=2.5, alpha=0.35,
                label="Successful Pass"),
         Line2D([0], [0], color=COLOR_FAIL, lw=2.5,
                label="Unsuccessful Pass"),
@@ -607,48 +602,38 @@ def draw_pass_map(df: pd.DataFrame, title: str):
 
     legend = ax.legend(
         handles=legend_elements, loc="upper left", bbox_to_anchor=(0.01, 0.99),
-        frameon=True, facecolor="white", edgecolor="#cccccc", shadow=False,
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466", shadow=False,
         fontsize="x-small", labelspacing=0.5, borderpad=0.5,
+        labelcolor="#e0e0e0",
     )
-    legend.get_frame().set_alpha(1.0)
+    legend.get_frame().set_alpha(0.92)
 
     arrow = FancyArrowPatch(
         (0.45, 0.05), (0.55, 0.05), transform=fig.transFigure,
-        arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#333333",
+        arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#cccccc",
     )
     fig.patches.append(arrow)
     fig.text(0.5, 0.02, "Attack Direction",
-             ha="center", va="center", fontsize=9, color="#333333")
+             ha="center", va="center", fontsize=9, color="#cccccc")
 
     fig.tight_layout()
     fig.canvas.draw()
 
     buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=FIG_DPI)
+    fig.savefig(buf, format="png", dpi=FIG_DPI, facecolor=fig.get_facecolor())
     buf.seek(0)
     img_obj = Image.open(buf)
     return img_obj, ax, fig
 
 
 # ==========================
-# Draw corridor heatmap field
+# Draw corridor heatmap (same size & style as pass map)
 # ==========================
-HEAT_FIG_W, HEAT_FIG_H = 7.9, 3.0  # compact heatmap area
-
-
-def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap (passes completed)"):
-    """
-    Draw a full pitch and overlay three corridors (left, center, right),
-    each divided into 6 equal parts along the x-axis. Color each cell by the
-    count of successful passes whose end point is inside that cell.
-    """
-    # We consider only completed/successful passes for the heatmap (por 'passes completados')
+def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap — Completed Passes"):
     df_success = df[df["is_won"]].copy()
 
-    # x bins (6 parts equal across whole pitch)
-    x_bins = np.linspace(0.0, FIELD_X, 7)  # 6 intervals
+    x_bins = np.linspace(0.0, FIELD_X, 7)
 
-    # corridor y ranges
     left_y0, left_y1 = LANE_LEFT_MIN, FIELD_Y
     right_y0, right_y1 = 0.0, LANE_RIGHT_MAX
     center_y0, center_y1 = LANE_RIGHT_MAX, LANE_LEFT_MIN
@@ -659,7 +644,6 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap (pass
         "right": (right_y0, right_y1),
     }
 
-    # counts dict: corridor -> array of 6 counts
     counts = {}
     for cname, (y0, y1) in corridors.items():
         arr = np.zeros(6, dtype=int)
@@ -674,17 +658,24 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap (pass
             arr[i] = int(mask.sum())
         counts[cname] = arr
 
-    # overall max for normalization
     all_vals = np.concatenate([counts[c] for c in counts])
     vmax = max(1, int(all_vals.max()))
 
-    # Prepare figure
-    pitch = Pitch(pitch_type="statsbomb", pitch_color="#f5f5f5", line_color="#4a4a4a")
-    fig, ax = pitch.draw(figsize=(HEAT_FIG_W, HEAT_FIG_H))
+    # Same size as pass map
+    pitch = Pitch(
+        pitch_type="statsbomb",
+        pitch_color="#1a1a2e",
+        line_color="#e0e0e0",
+        line_alpha=0.25,
+    )
+    fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
+    fig.set_facecolor("#1a1a2e")
     fig.set_dpi(FIG_DPI)
 
-    # Overlay rectangles for each corridor bin
-    cmap = plt.get_cmap("OrRd")
+    # Custom colormap: dark base → teal → bright cyan
+    colors_list = ["#1a1a2e", "#16334a", "#0e5a6e", "#0a8a8a", "#2dd4bf", "#a7f3d0"]
+    cmap = ListedColormap(colors_list)
+    cmap = plt.get_cmap("YlGnBu")
     norm = Normalize(vmin=0, vmax=vmax)
 
     for cname, (y0, y1) in corridors.items():
@@ -693,35 +684,66 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap (pass
             x0, x1 = x_bins[i], x_bins[i + 1]
             value = arr[i]
             color = cmap(norm(value))
-            rect = Rectangle((x0, y0), x1 - x0, y1 - y0,
-                             facecolor=color, edgecolor="white", linewidth=0.8, alpha=0.9, zorder=2)
+            rect = Rectangle(
+                (x0, y0), x1 - x0, y1 - y0,
+                facecolor=color, edgecolor="rgba(255,255,255,0.15)",
+                linewidth=0.6, alpha=0.88, zorder=2,
+            )
             ax.add_patch(rect)
 
-            # center text
+            # Soft rounded background behind text for readability
             cx = (x0 + x1) / 2.0
             cy = (y0 + y1) / 2.0
-            ax.text(cx, cy, str(value), ha="center", va="center", color="black" if value < vmax * 0.6 else "white",
-                    fontsize=9, fontweight="600", zorder=3)
 
-    # Titles/labels
-    ax.set_title(title, fontsize=11)
+            text_color = "#ffffff" if value >= vmax * 0.35 else "#b0b0b0"
+            fontw = "700" if value >= vmax * 0.5 else "500"
 
-    # Add small corridor labels on the right
-    ax.text(FIELD_X + 1.0, (left_y0 + left_y1) / 2, "Left", va="center", ha="left", fontsize=10)
-    ax.text(FIELD_X + 1.0, (center_y0 + center_y1) / 2, "Center", va="center", ha="left", fontsize=10)
-    ax.text(FIELD_X + 1.0, (right_y0 + right_y1) / 2, "Right", va="center", ha="left", fontsize=10)
+            ax.text(
+                cx, cy, str(value),
+                ha="center", va="center",
+                color=text_color,
+                fontsize=11, fontweight=fontw, zorder=4,
+            )
+
+    ax.set_title(title, fontsize=12, color="#e0e0e0", pad=8)
+
+    # Corridor labels on the right side
+    label_style = dict(va="center", ha="left", fontsize=9, color="#a0a0b0",
+                       fontstyle="italic")
+    ax.text(FIELD_X + 1.5, (left_y0 + left_y1) / 2, "Left", **label_style)
+    ax.text(FIELD_X + 1.5, (center_y0 + center_y1) / 2, "Center", **label_style)
+    ax.text(FIELD_X + 1.5, (right_y0 + right_y1) / 2, "Right", **label_style)
+
+    # Dashed corridor separators
+    ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", linewidth=0.5, alpha=0.15,
+               linestyle="--", zorder=3)
+    ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", linewidth=0.5, alpha=0.15,
+               linestyle="--", zorder=3)
 
     # Colorbar
     sm = ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array(all_vals)
-    cbar = fig.colorbar(sm, ax=ax, orientation="vertical", fraction=0.035, pad=0.02)
-    cbar.set_label("Completed passes (count)")
+    cbar = fig.colorbar(sm, ax=ax, orientation="vertical", fraction=0.028, pad=0.015,
+                        shrink=0.75)
+    cbar.set_label("Completed passes", fontsize=9, color="#c0c0c0")
+    cbar.ax.yaxis.set_tick_params(color="#c0c0c0")
+    cbar.outline.set_edgecolor("#444466")
+    plt.setp(cbar.ax.get_yticklabels(), color="#c0c0c0", fontsize=8)
+
+    # Attack direction arrow
+    arrow = FancyArrowPatch(
+        (0.45, 0.05), (0.55, 0.05), transform=fig.transFigure,
+        arrowstyle="-|>", mutation_scale=15, linewidth=2, color="#cccccc",
+    )
+    fig.patches.append(arrow)
+    fig.text(0.5, 0.02, "Attack Direction",
+             ha="center", va="center", fontsize=9, color="#cccccc")
 
     fig.tight_layout()
     fig.canvas.draw()
 
     buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=FIG_DPI)
+    fig.savefig(buf, format="png", dpi=FIG_DPI, facecolor=fig.get_facecolor())
     buf.seek(0)
     img_obj = Image.open(buf)
     return img_obj, ax, fig
@@ -732,30 +754,34 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap (pass
 # ==========================
 st.caption("Click the start dot to select the pass event.")
 
-# Main layout: left column (filters), middle column (field), right column (stats)
 col_filters, col_field, col_stats = st.columns([0.9, 2, 1], gap="large")
 
-# LEFT: Filters column
+# LEFT: Filters column with styled panel
 with col_filters:
-    st.subheader("Match Selection")
+    st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+
+    st.markdown("### 🏟️ Match Selection")
     selected_match = st.selectbox("Choose the match", list(full_data.keys()), index=0)
 
-    st.subheader("Pass Filter")
+    st.markdown('<hr class="filter-divider">', unsafe_allow_html=True)
+
+    st.markdown("### 🎯 Pass Filter")
     pass_filter = st.radio(
         "Filter passes",
         [
             "All Passes",
             "Successful Only",
             "Unsuccessful Only",
-            "Progressive Only (All)",         # includes both successful and unsuccessful
-            "Positive xT Only (Successful)"   # only successful passes with delta_xt > 0
+            "Progressive Only (All)",
+            "Positive xT Only (Successful)",
         ],
         index=0,
     )
 
-# MIDDLE: Field + selection details
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# MIDDLE: Field + heatmap + selection details
 with col_field:
-    # Subset dataframe according to selections (using values from filters)
     df = full_data[selected_match].copy()
 
     if pass_filter == "All Passes":
@@ -771,6 +797,7 @@ with col_field:
 
     stats = compute_stats(df)
 
+    # ---- Pass Map ----
     st.subheader("Pass Map (click the start dot)")
     img_obj, ax, fig = draw_pass_map(df, title=f"Pass Map — {selected_match}")
 
@@ -805,6 +832,14 @@ with col_field:
 
     plt.close(fig)
 
+    # ---- Corridor Heatmap (right below pass map) ----
+    st.markdown("")  # small spacer
+    st.subheader("Corridor Heatmap")
+    heat_img, hax, hfig = draw_corridor_heatmap(df)
+    st.image(heat_img, use_container_width=True)
+    plt.close(hfig)
+
+    # ---- Selected Event (moved below both maps) ----
     st.divider()
     st.subheader("Selected Event")
 
@@ -815,7 +850,6 @@ with col_field:
             f"Selected pass: #{int(selected_pass['number'])} ({selected_pass['type']})"
         )
 
-        # Position info
         det1, det2 = st.columns(2)
         with det1:
             st.write(
@@ -828,7 +862,6 @@ with col_field:
                 f"{selected_pass['y_end']:.2f})"
             )
 
-        # Direction + flags
         dir_emoji = {"forward": "⬆️", "backward": "⬇️", "lateral": "↔️"}
         direction_label = selected_pass["direction"].capitalize()
         emoji = dir_emoji.get(selected_pass["direction"], "")
@@ -844,7 +877,6 @@ with col_field:
             f"{'✅' if selected_pass['switch'] else '❌'}"
         )
 
-        # Distance + xT info
         xt_col1, xt_col2, xt_col3, xt_col4 = st.columns(4)
         xt_col1.metric("Distance", f"{selected_pass['pass_distance']:.1f}m")
         xt_col2.metric("xT Start", f"{selected_pass['xt_start']:.4f}")
@@ -856,7 +888,6 @@ with col_field:
             if selected_pass["delta_xt"] != 0 else None,
         )
 
-        # Video
         if has_video_value(selected_pass["video"]):
             try:
                 st.video(selected_pass["video"])
@@ -865,7 +896,7 @@ with col_field:
         else:
             st.warning("No video is attached to this event.")
 
-    # Data Table (expandable)
+    # Data Table
     with st.expander("📊 Full Pass Data Table"):
         display_cols = [
             "number", "type", "outcome", "direction",
@@ -887,18 +918,8 @@ with col_field:
             height=400,
         )
 
-    # -----------------------------
-    # Corridor heatmap field below
-    # -----------------------------
-    st.divider()
-    st.subheader("Corridor Heatmaps (por passes completados por célula)")
-    heat_img, hax, hfig = draw_corridor_heatmap(df)
-    st.image(heat_img, use_column_width=True)
-    plt.close(hfig)
-
-# RIGHT: Statistics (now inside two expanders)
+# RIGHT: Statistics
 with col_stats:
-    # General Statistics Expander (General stats + Directions)
     with st.expander("General Statistics", expanded=False):
         st.markdown('<div class="stats-section-title">Overview</div>', unsafe_allow_html=True)
         row1, row2, row3 = st.columns(3)
@@ -919,7 +940,6 @@ with col_stats:
         with dir3:
             small_metric("↔️ Lateral", f"{stats['lateral_total']} ({stats['pct_lateral']:.0f}%)")
 
-    # Advanced Statistics Expander (Progressive & xT)
     with st.expander("Advanced Statistics", expanded=False):
         st.markdown('<div class="stats-section-title">Progressive Passes (Wyscout)</div>', unsafe_allow_html=True)
         pw1, pw2, pw3, pw4 = st.columns(4)
