@@ -16,7 +16,7 @@ from matplotlib.colors import Normalize, ListedColormap, LinearSegmentedColormap
 # ==========================
 # Page Configuration
 # ==========================
-st.set_page_config(layout="wide", page_title="Pass Map Dashboard (Interactive) — v5.2")
+st.set_page_config(layout="wide", page_title="Pass Map Dashboard")
 
 # ==========================
 # CSS
@@ -111,7 +111,7 @@ def small_metric(label: str, value: str, delta: str | None = None):
 # ==========================
 # Configuration / constants
 # ==========================
-st.title("Pass Map Dashboard (Interactive) — v5.2")
+st.title("Pass Map Dashboard")
 
 FIELD_X, FIELD_Y = 120.0, 80.0
 HALF_LINE_X = FIELD_X / 2
@@ -609,7 +609,7 @@ with col_field:
     pass_map_placeholder = st.empty()
 
     # ---- Heatmap (render & handle click first) ----
-    st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap (clique em um quadrante para filtrar o Pass Map)</h4>', unsafe_allow_html=True)
+    st.markdown('<h4 style="color:#ffffff; margin:6px 0 6px 0;">Zone Heatmap</h4>', unsafe_allow_html=True)
     heat_img, hax, hfig = draw_corridor_heatmap(df_base)
     heat_click = streamlit_image_coordinates(heat_img, width=DISPLAY_WIDTH)
 
@@ -780,13 +780,13 @@ with col_stats:
         st.markdown('<div class="stats-section-title">Expected Threat (xT)</div>', unsafe_allow_html=True)
         xt1, xt2 = st.columns(2)
         with xt1:
-            small_metric("xT Σ (Progressive)", f"{stats_safe['xt_prog_sum']:.4f}")
+            small_metric("xT Σ (Progressive)", f"{stats_safe['xt_prog_sum']:.1f}")
         with xt2:
-            small_metric("xT Mean (Progressive)", f"{stats_safe['xt_prog_mean']:.4f}")
+            small_metric("xT Mean (Progressive)", f"{stats_safe['xt_prog_mean']:.1f}")
         xt3, xt4 = st.columns(2)
         with xt3:
-            small_metric("xT Σ (Positive ΔxT)", f"{stats_safe['positive_xt_sum']:.4f}")
+            small_metric("xT Σ (Positive ΔxT)", f"{stats_safe['positive_xt_sum']:.14f}")
         with xt4:
-            small_metric("xT Mean (Positive ΔxT)", f"{stats_safe['positive_xt_mean']:.4f}")
+            small_metric("xT Mean (Positive ΔxT)", f"{stats_safe['positive_xt_mean']:.1f}")
     st.divider()
     st.caption("Notas: 'Progressive' segue a definição Wyscout; ΔxT só é contabilizado para passes bem-sucedidos.")
