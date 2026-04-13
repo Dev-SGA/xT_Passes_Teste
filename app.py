@@ -686,7 +686,7 @@ def draw_corridor_heatmap(df: pd.DataFrame, title: str = "Corridor Heatmap — C
             color = cmap(norm(value))
             rect = Rectangle(
                 (x0, y0), x1 - x0, y1 - y0,
-                facecolor=color, edgecolor="rgba(255,255,255,0.15)",
+                facecolor=color, edgecolor=(1.0, 1.0, 1.0, 0.15),
                 linewidth=0.6, alpha=0.88, zorder=2,
             )
             ax.add_patch(rect)
